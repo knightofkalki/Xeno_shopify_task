@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Tenant Model - Main tenant information
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  shopDomain    String   @unique
+  accessToken   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  users         User[]
+  customers     Customer[]
+  products      Product[]
+  orders        Order[]
+  
+  @@map("tenants")
+}
+
+// User Model - For dashboard authentication
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  tenantId  String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@map("users")
+}
+
+// Customer Model - Synced from Shopify
+model Customer {
+  id                String   @id @default(cuid())
+  tenantId          String
+  shopifyCustomerId String
+  email             String?
+  firstName         String?
+  lastName          String?
+  phone             String?
+  totalSpent        Decimal  @default(0) @db.Decimal(10,2)
+  ordersCount       Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  
+  @@unique([tenantId, shopifyCustomerId])
+  @@map("customers")
+}
+
+// Product Model - Synced from Shopify  
+model Product {
+  id              String   @id @default(cuid())
+  tenantId        String
+  shopifyProductId String
+  title           String
+  handle          String?
+  price           Decimal  @default(0) @db.Decimal(10,2)
+  compareAtPrice  Decimal? @db.Decimal(10,2)
+  inventory       Int      @default(0)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  tenant          Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderItems      OrderItem[]
+  
+  @@unique([tenantId, shopifyProductId])
+  @@map("products")
+}
+
+// Order Model - Synced from Shopify
+model Order {
+  id             String   @id @default(cuid())
+  tenantId       String
+  shopifyOrderId String
+  customerId     String?
+  orderNumber    String
+  totalPrice     Decimal  @default(0) @db.Decimal(10,2)
+  subtotalPrice  Decimal  @default(0) @db.Decimal(10,2)
+  taxAmount      Decimal  @default(0) @db.Decimal(10,2)
+  status         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer       Customer?  @relation(fields: [customerId], references: [id])
+  orderItems     OrderItem[]
+  
+  @@unique([tenantId, shopifyOrderId])
+  @@map("orders")
+}
+
+// OrderItem Model - Individual items in orders
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String?
+  title     String
+  quantity  Int
+  price     Decimal @db.Decimal(10,2)
+  
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id])
+  
+  @@map("order_items")
+}

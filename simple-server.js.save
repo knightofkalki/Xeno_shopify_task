@@ -1,0 +1,232 @@
+
+const dotenv = require('dotenv');
+dotenv.config();
+const express = require('express');
+const cors = require('cors');
+
+const { Client } = require('pg');
+const ShopifyService = require('./src/services/shopifyService'); // CLASS import
+const shopifyService = new ShopifyService(); // Create instance
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Add this route to check environment variables
+app.get('/debug/env', (req, res) => {
+  res.json({
+    SHOPIFY_STORE_URL: process.env.SHOPIFY_STORE_URL,
+    SHOPIFY_ACCESS_TOKEN: process.env.SHOPIFY_ACCESS_TOKEN ? 'SET' : 'NOT_SET',
+    hasStoreUrl: !!process.env.SHOPIFY_STORE_URL,
+    storeUrlLength: process.env.SHOPIFY_STORE_URL?.length || 0
+  });
+});
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Database config
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'xeno_db',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'Ujjwal,agg1499@'  // Put real password
+};
+
+// Health endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    service: 'Xeno Shopify Service'
+  });
+});
+
+// Database test endpoint
+app.get('/test-db', async (req, res) => {
+  const client = new Client(dbConfig);
+  
+  try {
+    await client.connect();
+    const result = await client.query('SELECT NOW() as timestamp');
+    await client.end();
+    
+    res.json({ 
+      status: 'Database Connected Successfully',
+      timestamp: result.rows[0].timestamp
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'Database Connection Failed',
+      error: error.message 
+    });
+  }
+});
+
+// Test Shopify connection
+app.get('/api/shopify/test', async (req, res) => {
+  try {
+    const result = await shopifyService.testConnection();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Shopify connection failed',
+      message: error.message
+    });
+  }
+});
+
+// Sync customers
+app.post('/api/sync/customers', async (req, res) => {
+  const { tenantId = 1 } = req.body;
+  
+  try {
+    const result = await shopifyService.syncCustomers(tenantId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync customers',
+      message: error.message
+    });
+  }
+});
+
+// Sync products
+app.post('/api/sync/products', async (req, res) => {
+  const { tenantId = 1 } = req.body;
+  
+  try {
+    const result = await shopifyService.syncProducts(tenantId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync products',
+      message: error.message
+    });
+  }
+});
+
+// Sync orders
+app.post('/api/sync/orders', async (req, res) => {
+  const { tenantId = 1 } = req.body;
+  
+  try {
+    const result = await shopifyService.syncOrders(tenantId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync orders',
+      message: error.message
+    });
+  }
+});
+
+// Sync all data
+app.post('/api/sync/all', async (req, res) => {
+  const { tenantId = 1 } = req.body;
+  
+  try {
+    const result = await shopifyService.syncAll(tenantId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync all data',
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/dashboard/:tenantId', async (req, res) => {
+  const { tenantId } = req.params;
+  const client = new Client(dbConfig);
+  
+  try {
+    await client.connect();
+    
+    const [customers, products, orders] = await Promise.all([
+      client.query('SELECT COUNT(*) FROM customers WHERE tenant_id = $1', [tenantId]),
+      client.query('SELECT COUNT(*) FROM products WHERE tenant_id = $1', [tenantId]),
+      client.query('SELECT COUNT(*), SUM(total_price) FROM orders WHERE tenant_id = $1', [tenantId])
+    ]);
+    
+    await client.end();
+    
+    res.json({
+      success: true,
+      tenantId,
+      stats: {
+        totalCustomers: parseInt(customers.rows[0].count),
+        totalProducts: parseInt(products.rows[0].count),
+        totalOrders: parseInt(orders.rows[0].count),
+        totalRevenue: parseFloat(orders.rows[0].sum || 0)
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get dashboard data',
+      message: error.message
+    });
+  }
+});
+// Dashboard stats endpoint
+app.get('/api/dashboard/:tenantId', async (req, res) => {
+  console.log('📊 Dashboard request for tenant:', req.params.tenantId);
+  
+  try {
+    const { tenantId } = req.params;
+    const client = new Client(dbConfig);
+    await client.connect();
+    
+    // Query with proper column names (camelCase with quotes)
+    const customerCount = await client.query('SELECT COUNT(*) as count FROM customers WHERE "tenantId" = $1', [tenantId]);
+    const productCount = await client.query('SELECT COUNT(*) as count FROM products WHERE "tenantId" = $1', [tenantId]);
+    const orderStats = await client.query('SELECT COUNT(*) as count, COALESCE(SUM("totalPrice"), 0) as revenue FROM orders WHERE "tenantId" = $1', [tenantId]);
+    
+    await client.end();
+    
+    const stats = {
+      totalCustomers: parseInt(customerCount.rows[0].count) || 0,
+      totalProducts: parseInt(productCount.rows[0].count) || 0,
+      totalOrders: parseInt(orderStats.rows[0].count) || 0,
+      totalRevenue: parseFloat(orderStats.rows[0].revenue) || 0
+    };
+    
+    console.log('📊 Dashboard stats:', stats);
+    
+    res.json({
+      success: true,
+      stats: stats
+    });
+    
+  } catch (error) {
+    console.error('❌ Dashboard error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to get dashboard data',
+      message: error.message 
+    });
+  }
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log('🎉 XENO SHOPIFY PRIVATE APP SERVICE!');
+  console.log(`🚀 Server: http://localhost:${PORT}`);
+  console.log(`📊 Health: http://localhost:${PORT}/health`);
+  console.log(`🗄️ Database: http://localhost:${PORT}/test-db`);
+  console.log(`🛒 Shopify Test: http://localhost:${PORT}/api/shopify/test`);
+  console.log('📊 Data Sync APIs:');
+  console.log(`   POST /api/sync/customers`);
+  console.log(`   POST /api/sync/products`);
+  console.log(`   POST /api/sync/orders`);
+  console.log(`   POST /api/sync/all`);
+  console.log(`   GET  /api/dashboard/:tenantId`);
+});
