@@ -1,9 +1,15 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from './context/AuthContext';
 
 const BACKEND_URL = 'http://localhost:3001';
 
 export default function Dashboard() {
+  const { isAuthenticated, loading: authLoading, user, logout, getAuthHeaders } = useAuth();
+  const router = useRouter();
+  
+  // All your existing state variables remain the same
   const [stats, setStats] = useState({
     totalCustomers: 0,
     totalProducts: 0,
@@ -14,51 +20,66 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [syncStatus, setSyncStatus] = useState('');
 
-  // Load dashboard stats
-  // Update this function to force refresh
-const loadDashboard = async () => {
-  setIsLoading(true);
-  setError(null);
-  
-  try {
-    // Add timestamp to prevent caching
-    const timestamp = new Date().getTime();
-    const response = await fetch(`${BACKEND_URL}/api/dashboard/1?t=${timestamp}`);
-    const data = await response.json();
-    
-    console.log('Dashboard data received:', data); // Debug log
-    
-    if (data.success) {
-      setStats(data.stats);
-    } else {
-      setError(data.message || 'Failed to load dashboard data');
+  // Add auth check
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated()) {
+      router.push('/login');
+      return;
     }
-  } catch (error) {
-    console.error('Dashboard load error:', error);
-    setError('Failed to connect to server');
-  } finally {
-    setIsLoading(false);
-  }
-};
+    if (isAuthenticated()) {
+      loadDashboard();
+      testShopify();
+    }
+  }, [authLoading, isAuthenticated]);
 
+  // Update loadDashboard to use user's tenantId
+  const loadDashboard = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const timestamp = new Date().getTime();
+      const tenantId = user?.tenantId || '1';
+      const response = await fetch(`${BACKEND_URL}/api/dashboard/${tenantId}?t=${timestamp}`, {
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      
+      console.log('Dashboard data received:', data);
+      
+      if (data.success) {
+        setStats(data.stats);
+      } else {
+        setError(data.message || 'Failed to load dashboard data');
+      }
+    } catch (error) {
+      console.error('Dashboard load error:', error);
+      setError('Failed to connect to server');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  // Sync function
+  // Update syncData to use user's tenantId
   const syncData = async (endpoint, type) => {
     setSyncStatus(`Syncing ${type}...`);
     setError(null);
     
     try {
+      const tenantId = user?.tenantId || '1';
       const response = await fetch(`${BACKEND_URL}/api/sync/${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: '1' })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ tenantId })
       });
       
       const result = await response.json();
       
       if (result.success) {
         setSyncStatus(`✅ ${type} synced successfully`);
-        // Reload dashboard after successful sync
         setTimeout(loadDashboard, 1000);
       } else {
         setSyncStatus(`❌ ${type} sync failed: ${result.message}`);
@@ -71,7 +92,7 @@ const loadDashboard = async () => {
     }
   };
 
-  // Test connections
+  // All other functions remain exactly the same (testShopify, testDatabase, checkServerHealth)
   const testShopify = async () => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/shopify/test`);
@@ -102,30 +123,58 @@ const loadDashboard = async () => {
     }
   };
 
-  // Auto-load dashboard on component mount
-  useEffect(() => {
-    loadDashboard();
-    testShopify(); // Auto-test Shopify connection
-  }, []);
+  // Auth loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">🛒</div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated, don't render anything (will redirect)
+  if (!isAuthenticated()) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4">
-        {/* Header */}
+        {/* Header with user info */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <span className="text-4xl">🛒</span>
             <h1 className="text-3xl font-bold text-gray-800">Xeno Shopify Dashboard</h1>
           </div>
           
-          {/* Connection Status */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium border border-green-200">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            Shopify: connected
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-medium border border-green-200">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              Shopify: connected
+            </div>
+            
+            {user && (
+              <div className="inline-flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-800 rounded-full text-sm">
+                <span>👤</span>
+                <span>{user.email}</span>
+                <span className="text-xs bg-blue-200 px-2 py-1 rounded">Tenant {user.tenantId}</span>
+              </div>
+            )}
+            
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full text-sm transition-colors"
+            >
+              <span>🚪</span>
+              <span>Logout</span>
+            </button>
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Rest of your existing dashboard JSX remains exactly the same */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
             <h3 className="text-lg font-semibold text-gray-700 mb-2">👥 Total Customers</h3>
@@ -156,7 +205,7 @@ const loadDashboard = async () => {
           </div>
         </div>
 
-        {/* Sync Controls */}
+        {/* All your existing sync controls and quick actions remain exactly the same */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex items-center gap-2 mb-4">
             <span className="text-xl">🔄</span>
@@ -193,7 +242,6 @@ const loadDashboard = async () => {
             </button>
           </div>
           
-          {/* Status Display */}
           {(syncStatus || error) && (
             <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200">
               {error && (
@@ -209,7 +257,6 @@ const loadDashboard = async () => {
           )}
         </div>
 
-        {/* Quick Actions */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center gap-2 mb-4">
             <span className="text-xl">⚡</span>
