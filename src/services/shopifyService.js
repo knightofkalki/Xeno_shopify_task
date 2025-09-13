@@ -2,393 +2,324 @@ const axios = require('axios');
 const { Client } = require('pg');
 
 // Database config
+// Database config - HARDCODED FIX
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'xeno_db',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'Ujjwal,agg1499@'
+  host: 'localhost',
+  port: 5432,
+  database: 'xeno_db',
+  user: 'postgres',
+  password: 'Ujjwal,agg1499@'  // Direct string without env
 };
 
+
 class ShopifyService {
-  constructor() {
-    console.log('🔍 ShopifyService Constructor Debug:');
-    console.log('process.env.SHOPIFY_STORE_URL:', process.env.SHOPIFY_STORE_URL);
-    console.log('process.env.SHOPIFY_ACCESS_TOKEN:', process.env.SHOPIFY_ACCESS_TOKEN ? 'SET' : 'NOT_SET');
-    
-    this.storeUrl = process.env.SHOPIFY_STORE_URL;
-    this.accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
-    
-    console.log('this.storeUrl:', this.storeUrl);
-    console.log('this.accessToken:', this.accessToken ? 'SET' : 'NOT_SET');
-    
-    if (!this.storeUrl) {
-      console.error('❌ Store URL is undefined in constructor!');
+  
+  // Get store config by tenantId
+  getStoreConfig(tenantId) {
+  const storeConfigs = {
+    '1': {
+      storeUrl: 'techmart-dev-store.myshopify.com',
+      accessToken: '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',
+      storeName: 'techmart-dev-store'
+    },
+    '2': {
+      storeUrl: 'techmart-dev-store2.myshopify.com',
+      accessToken: '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',
+      storeName: 'techmart-dev-store2'
     }
-    
-    this.baseUrl = `https://${this.storeUrl}/admin/api/2024-01`;
-    console.log('this.baseUrl:', this.baseUrl);
+  };
+  
+  console.log(`🔍 Store config for tenant ${tenantId}:`, storeConfigs[tenantId]);
+  return storeConfigs[tenantId];
+}
+
+
+  // Create axios instance for specific tenant
+  createAxiosInstance(tenantId) {
+  const config = this.getStoreConfig(tenantId);
+  
+  if (!config) {
+    throw new Error(`No store configuration found for tenant ${tenantId}`);
   }
 
-  // Make API request to Shopify
-  async apiRequest(endpoint, method = 'GET') {
-    const fullUrl = `${this.baseUrl}${endpoint}`;
-    console.log('🌐 Making request to:', fullUrl);
-    
-    try {
-      const response = await axios({
-        method,
-        url: fullUrl,
-        headers: {
-          'X-Shopify-Access-Token': this.accessToken,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000 // 10 second timeout
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error(`❌ Request failed for URL: ${fullUrl}`);
-      console.error('Error:', error.response?.data || error.message);
-      throw new Error(error.response?.data?.errors || error.message);
-    }
-  }
+  console.log(`🚀 Creating axios for tenant ${tenantId}:`, {
+    storeUrl: config.storeUrl,
+    hasAccessToken: !!config.accessToken
+  });
 
-  // Test connection - ENHANCED VERSION
-  async testConnection() {
-    console.log('🔍 Testing Shopify connection...');
-    
+  return axios.create({
+    baseURL: `https://${config.storeUrl}/admin/api/2024-01/`,
+    headers: {
+      'X-Shopify-Access-Token': config.accessToken,
+      'Content-Type': 'application/json'
+    },
+    timeout: 10000
+  });
+}
+
+
+  // Test connection for specific tenant
+  async testConnection(tenantId = '1') {
     try {
-      const shopData = await this.apiRequest('/shop.json');
+      const config = this.getStoreConfig(tenantId);
+      const shopify = this.createAxiosInstance(tenantId);
       
-      console.log('✅ Shopify connection successful:', shopData.shop.name);
+      const response = await shopify.get('shop.json');
       
       return {
         success: true,
-        shop: shopData.shop.name,
-        domain: shopData.shop.domain,
-        email: shopData.shop.email,
-        currency: shopData.shop.currency,
-        message: `Connected to ${shopData.shop.name}`
+        message: `Connected to ${config.storeName} successfully`,
+        shop: response.data.shop.name,
+        domain: response.data.shop.domain,
+        email: response.data.shop.email,
+        tenantId: tenantId
       };
     } catch (error) {
-      console.error('❌ Shopify connection failed:', error.message);
-      
       return {
         success: false,
-        error: 'Shopify connection failed',
-        message: error.message,
-        details: {
-          storeUrl: this.storeUrl,
-          hasToken: !!this.accessToken,
-          baseUrl: this.baseUrl
-        }
+        message: `Failed to connect to store (tenant ${tenantId})`,
+        error: error.response?.data || error.message
       };
     }
   }
 
-  // Fetch customers with error handling
-  async getCustomers() {
+  // Get customers for specific tenant
+  async getCustomers(tenantId = '1', limit = 250) {
     try {
-      const data = await this.apiRequest('/customers.json?limit=250');
-      return data.customers || [];
+      const shopify = this.createAxiosInstance(tenantId);
+      const response = await shopify.get(`customers.json?limit=${limit}`);
+      return response.data.customers;
     } catch (error) {
-      console.error('❌ Failed to fetch customers:', error.message);
+      console.error(`Error fetching customers for tenant ${tenantId}:`, error.message);
       throw error;
     }
   }
 
-  // Fetch products with error handling
-  async getProducts() {
+  // Get products for specific tenant
+  async getProducts(tenantId = '1', limit = 250) {
     try {
-      const data = await this.apiRequest('/products.json?limit=250');
-      return data.products || [];
+      const shopify = this.createAxiosInstance(tenantId);
+      const response = await shopify.get(`products.json?limit=${limit}`);
+      return response.data.products;
     } catch (error) {
-      console.error('❌ Failed to fetch products:', error.message);
+      console.error(`Error fetching products for tenant ${tenantId}:`, error.message);
       throw error;
     }
   }
 
-  // Fetch orders with error handling
-  async getOrders() {
+  // Get orders for specific tenant
+  async getOrders(tenantId = '1', limit = 250) {
     try {
-      const data = await this.apiRequest('/orders.json?status=any&limit=250');
-      return data.orders || [];
+      const shopify = this.createAxiosInstance(tenantId);
+      const response = await shopify.get(`orders.json?limit=${limit}&status=any`);
+      return response.data.orders;
     } catch (error) {
-      console.error('❌ Failed to fetch orders:', error.message);
+      console.error(`Error fetching orders for tenant ${tenantId}:`, error.message);
       throw error;
     }
   }
 
-  // Sync products with improved error handling
-  async syncProducts(tenantId = "1") {
-    console.log('🔄 Syncing products for tenant:', tenantId);
-    
+  // Sync customers for specific tenant
+  async syncCustomers(tenantId = '1') {
     const client = new Client(dbConfig);
     
     try {
-      const products = await this.getProducts();
-      console.log(`📦 Retrieved ${products.length} products from Shopify`);
-      
-      await client.connect();
-      
-      let syncedCount = 0;
-      
-      for (const product of products) {
-        const variant = product.variants[0] || {};
-        
-        try {
-          // Check if product exists first
-          const existingProduct = await client.query(
-            'SELECT id FROM products WHERE "shopifyProductId" = $1', 
-            [product.id.toString()]
-          );
-          
-          if (existingProduct.rows.length > 0) {
-            // Update existing product
-            await client.query(`
-              UPDATE products SET
-                title = $1,
-                handle = $2,
-                price = $3,
-                inventory = $4,
-                status = $5,
-                "updatedAt" = NOW()
-              WHERE "shopifyProductId" = $6
-            `, [
-              product.title,
-              product.handle,
-              parseFloat(variant.price || 0),
-              parseInt(variant.inventory_quantity || 0),
-              product.status || 'active',
-              product.id.toString()
-            ]);
-          } else {
-            // Insert new product
-            await client.query(`
-              INSERT INTO products (
-                id, "tenantId", "shopifyProductId", title, handle,
-                price, inventory, status, "createdAt", "updatedAt"
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            `, [
-              `prod_${product.id}_${tenantId}`,
-              tenantId.toString(),
-              product.id.toString(),
-              product.title,
-              product.handle,
-              parseFloat(variant.price || 0),
-              parseInt(variant.inventory_quantity || 0),
-              product.status || 'active',
-              new Date(product.created_at),
-              new Date()
-            ]);
-          }
-          
-          syncedCount++;
-        } catch (productError) {
-          console.error(`❌ Failed to sync product ${product.id}:`, productError.message);
-        }
-      }
-      
-      await client.end();
-      console.log(`✅ Successfully synced ${syncedCount}/${products.length} products`);
-      
-      return {
-        success: true,
-        synced: syncedCount,
-        total: products.length,
-        message: `Synced ${syncedCount} products successfully`
-      };
-      
-    } catch (error) {
-      console.error('❌ Error syncing products:', error.message);
-      await client.end();
-      throw error;
-    }
-  }
-
-  // Sync customers with improved error handling
-  async syncCustomers(tenantId = "1") {
-    console.log('🔄 Syncing customers for tenant:', tenantId);
-    
-    const client = new Client(dbConfig);
-    
-    try {
-      const customers = await this.getCustomers();
-      console.log(`👥 Retrieved ${customers.length} customers from Shopify`);
+      console.log(`🔄 Syncing customers for tenant ${tenantId}...`);
+      const customers = await this.getCustomers(tenantId);
       
       await client.connect();
       
       let syncedCount = 0;
       
       for (const customer of customers) {
-        try {
-          await client.query(`
-            INSERT INTO customers (
-              id, "tenantId", "shopifyCustomerId", email, "firstName", 
-              "lastName", phone, "totalSpent", "ordersCount", 
-              "createdAt", "updatedAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            ON CONFLICT ("shopifyCustomerId") 
-            DO UPDATE SET
-              email = EXCLUDED.email,
-              "firstName" = EXCLUDED."firstName",
-              "lastName" = EXCLUDED."lastName",
-              phone = EXCLUDED.phone,
-              "totalSpent" = EXCLUDED."totalSpent",
-              "ordersCount" = EXCLUDED."ordersCount",
-              "updatedAt" = NOW()
-          `, [
-            `cust_${customer.id}_${tenantId}`,
-            tenantId.toString(),
-            customer.id.toString(),
-            customer.email,
-            customer.first_name,
-            customer.last_name,
-            customer.phone,
-            parseFloat(customer.total_spent || 0),
-            customer.orders_count || 0,
-            new Date(customer.created_at),
-            new Date()
-          ]);
-          
-          syncedCount++;
-        } catch (customerError) {
-          console.error(`❌ Failed to sync customer ${customer.id}:`, customerError.message);
-        }
+        await client.query(`
+          INSERT INTO customers (
+            "shopifyId", "tenantId", email, "firstName", "lastName", 
+            "totalSpent", "ordersCount", "createdAt", "updatedAt"
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT ("shopifyId", "tenantId") 
+          DO UPDATE SET
+            email = EXCLUDED.email,
+            "firstName" = EXCLUDED."firstName",
+            "lastName" = EXCLUDED."lastName",
+            "totalSpent" = EXCLUDED."totalSpent",
+            "ordersCount" = EXCLUDED."ordersCount",
+            "updatedAt" = EXCLUDED."updatedAt"
+        `, [
+          customer.id,
+          tenantId,
+          customer.email,
+          customer.first_name,
+          customer.last_name,
+          parseFloat(customer.total_spent || 0),
+          parseInt(customer.orders_count || 0),
+          new Date(customer.created_at),
+          new Date(customer.updated_at)
+        ]);
+        syncedCount++;
       }
       
       await client.end();
-      console.log(`✅ Successfully synced ${syncedCount}/${customers.length} customers`);
       
       return {
         success: true,
-        synced: syncedCount,
-        total: customers.length,
-        message: `Synced ${syncedCount} customers successfully`
+        message: `Synced ${syncedCount} customers for tenant ${tenantId}`,
+        count: syncedCount
       };
       
     } catch (error) {
-      console.error('❌ Error syncing customers:', error.message);
       await client.end();
-      throw error;
+      console.error(`❌ Customer sync error for tenant ${tenantId}:`, error);
+      return {
+        success: false,
+        message: `Failed to sync customers for tenant ${tenantId}`,
+        error: error.message
+      };
     }
   }
 
-  // Sync orders with improved error handling
-  async syncOrders(tenantId = "1") {
-    console.log('🔄 Syncing orders for tenant:', tenantId);
-    
+  // Sync products for specific tenant  
+  async syncProducts(tenantId = '1') {
     const client = new Client(dbConfig);
     
     try {
-      const orders = await this.getOrders();
-      console.log(`🛍️ Retrieved ${orders.length} orders from Shopify`);
+      console.log(`🔄 Syncing products for tenant ${tenantId}...`);
+      const products = await this.getProducts(tenantId);
+      
+      await client.connect();
+      
+      let syncedCount = 0;
+      
+      for (const product of products) {
+        await client.query(`
+          INSERT INTO products (
+            "shopifyId", "tenantId", title, "bodyHtml", vendor, 
+            "productType", price, "createdAt", "updatedAt"
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT ("shopifyId", "tenantId") 
+          DO UPDATE SET
+            title = EXCLUDED.title,
+            "bodyHtml" = EXCLUDED."bodyHtml",
+            vendor = EXCLUDED.vendor,
+            "productType" = EXCLUDED."productType", 
+            price = EXCLUDED.price,
+            "updatedAt" = EXCLUDED."updatedAt"
+        `, [
+          product.id,
+          tenantId,
+          product.title,
+          product.body_html,
+          product.vendor,
+          product.product_type,
+          parseFloat(product.variants?.[0]?.price || 0),
+          new Date(product.created_at),
+          new Date(product.updated_at)
+        ]);
+        syncedCount++;
+      }
+      
+      await client.end();
+      
+      return {
+        success: true,
+        message: `Synced ${syncedCount} products for tenant ${tenantId}`,
+        count: syncedCount
+      };
+      
+    } catch (error) {
+      await client.end();
+      console.error(`❌ Product sync error for tenant ${tenantId}:`, error);
+      return {
+        success: false,
+        message: `Failed to sync products for tenant ${tenantId}`,
+        error: error.message
+      };
+    }
+  }
+
+  // Sync orders for specific tenant
+  async syncOrders(tenantId = '1') {
+    const client = new Client(dbConfig);
+    
+    try {
+      console.log(`🔄 Syncing orders for tenant ${tenantId}...`);
+      const orders = await this.getOrders(tenantId);
       
       await client.connect();
       
       let syncedCount = 0;
       
       for (const order of orders) {
-        try {
-          await client.query(`
-            INSERT INTO orders (
-              id, "tenantId", "shopifyOrderId", "customerId", "orderNumber",
-              "totalPrice", currency, status, "createdAt", "updatedAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT ("shopifyOrderId") 
-            DO UPDATE SET
-              "totalPrice" = EXCLUDED."totalPrice",
-              status = EXCLUDED.status,
-              "updatedAt" = NOW()
-          `, [
-            `ord_${order.id}_${tenantId}`,
-            tenantId.toString(),
-            order.id.toString(),
-            order.customer?.id?.toString() || null,
-            order.order_number,
-            parseFloat(order.total_price),
-            order.currency,
-            order.fulfillment_status || 'pending',
-            new Date(order.created_at),
-            new Date()
-          ]);
-          
-          syncedCount++;
-        } catch (orderError) {
-          console.error(`❌ Failed to sync order ${order.id}:`, orderError.message);
-        }
+        await client.query(`
+          INSERT INTO orders (
+            "shopifyId", "tenantId", "customerId", "totalPrice", 
+            "financialStatus", "fulfillmentStatus", "createdAt", "updatedAt"
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT ("shopifyId", "tenantId") 
+          DO UPDATE SET
+            "customerId" = EXCLUDED."customerId",
+            "totalPrice" = EXCLUDED."totalPrice",
+            "financialStatus" = EXCLUDED."financialStatus",
+            "fulfillmentStatus" = EXCLUDED."fulfillmentStatus",
+            "updatedAt" = EXCLUDED."updatedAt"
+        `, [
+          order.id,
+          tenantId,
+          order.customer?.id || null,
+          parseFloat(order.total_price || 0),
+          order.financial_status,
+          order.fulfillment_status,
+          new Date(order.created_at),
+          new Date(order.updated_at)
+        ]);
+        syncedCount++;
       }
       
       await client.end();
-      console.log(`✅ Successfully synced ${syncedCount}/${orders.length} orders`);
       
       return {
         success: true,
-        synced: syncedCount,
-        total: orders.length,
-        message: `Synced ${syncedCount} orders successfully`
+        message: `Synced ${syncedCount} orders for tenant ${tenantId}`,
+        count: syncedCount
       };
       
     } catch (error) {
-      console.error('❌ Error syncing orders:', error.message);
       await client.end();
-      throw error;
+      console.error(`❌ Order sync error for tenant ${tenantId}:`, error);
+      return {
+        success: false,
+        message: `Failed to sync orders for tenant ${tenantId}`,
+        error: error.message
+      };
     }
   }
 
-  // Sync all data with comprehensive error handling
-  async syncAll(tenantId = "1") {
-    console.log('🔄 Starting full sync for tenant:', tenantId);
-    
+  // Sync all data for specific tenant
+  async syncAll(tenantId = '1') {
     try {
-      const results = {
-        customers: { success: false, synced: 0, error: null },
-        products: { success: false, synced: 0, error: null },
-        orders: { success: false, synced: 0, error: null }
-      };
+      console.log(`🚀 Starting full sync for tenant ${tenantId}...`);
       
-      // Sync customers
-      try {
-        const customerResult = await this.syncCustomers(tenantId);
-        results.customers = customerResult;
-      } catch (error) {
-        results.customers.error = error.message;
-      }
-      
-      // Sync products  
-      try {
-        const productResult = await this.syncProducts(tenantId);
-        results.products = productResult;
-      } catch (error) {
-        results.products.error = error.message;
-      }
-      
-      // Sync orders
-      try {
-        const orderResult = await this.syncOrders(tenantId);
-        results.orders = orderResult;
-      } catch (error) {
-        results.orders.error = error.message;
-      }
-      
-      const totalSynced = results.customers.synced + results.products.synced + results.orders.synced;
-      const hasErrors = results.customers.error || results.products.error || results.orders.error;
+      const [customers, products, orders] = await Promise.all([
+        this.syncCustomers(tenantId),
+        this.syncProducts(tenantId), 
+        this.syncOrders(tenantId)
+      ]);
       
       return {
-        success: !hasErrors,
-        message: hasErrors ? 'Sync completed with some errors' : 'All data synced successfully',
-        totalSynced,
-        results,
-        timestamp: new Date().toISOString()
+        success: true,
+        message: `Full sync completed for tenant ${tenantId}`,
+        results: { customers, products, orders }
       };
       
     } catch (error) {
-      console.error('❌ Critical error in syncAll:', error.message);
-      throw error;
+      console.error(`❌ Full sync error for tenant ${tenantId}:`, error);
+      return {
+        success: false,
+        message: `Failed to sync all data for tenant ${tenantId}`,
+        error: error.message
+      };
     }
   }
 }
 
-// Export a single instance
 module.exports = new ShopifyService();

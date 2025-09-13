@@ -1,1 +1,8 @@
-{}
+{
+  "components/CustomEventsChart.jsx -> ../utils/eventTracker": {
+    "id": "components/CustomEventsChart.jsx -> ../utils/eventTracker",
+    "files": [
+      "static/chunks/_app-pages-browser_utils_eventTracker_js.js"
+    ]
+  }
+}

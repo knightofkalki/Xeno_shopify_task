@@ -1,5 +1,13 @@
 const dotenv = require('dotenv');
 dotenv.config();
+
+// DEBUG LOG - ADD THIS
+console.log('🔍 Environment Variables Check:');
+console.log('SHOPIFY_STORE_URL:', process.env.SHOPIFY_STORE_URL);
+console.log('SHOPIFY_STORE_URL_2:', process.env.SHOPIFY_STORE_URL_2);
+console.log('SHOPIFY_ACCESS_TOKEN:', process.env.SHOPIFY_ACCESS_TOKEN ? 'SET' : 'NOT SET');
+console.log('SHOPIFY_ACCESS_TOKEN_2:', process.env.SHOPIFY_ACCESS_TOKEN_2 ? 'SET' : 'NOT SET');
+
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -18,14 +26,102 @@ const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 app.use(cors());
 app.use(express.json());
 
-// Database config
+
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'xeno_db',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'Ujjwal,agg1499@'
+  host: 'localhost',
+  port: 5432,
+  database: 'xeno_db',
+  user: 'postgres',
+  password: 'Ujjwal,agg1499@'
 };
+
+// CREATE TABLES IF NOT EXIST - FORCE RECREATE
+async function createTables() {
+  const client = new Client(dbConfig);
+  try {
+    await client.connect();
+    
+    // DROP EXISTING TABLES (FORCE RECREATE)
+    await client.query(`DROP TABLE IF EXISTS customers CASCADE`);
+    await client.query(`DROP TABLE IF EXISTS products CASCADE`);
+    await client.query(`DROP TABLE IF EXISTS orders CASCADE`);
+    
+    console.log('✅ Old tables dropped');
+    
+    // CREATE customers table
+    await client.query(`
+      CREATE TABLE customers (
+        id SERIAL PRIMARY KEY,
+        "shopifyId" VARCHAR(255) NOT NULL,
+        "tenantId" VARCHAR(50) NOT NULL,
+        email VARCHAR(255),
+        "firstName" VARCHAR(255),
+        "lastName" VARCHAR(255),
+        "totalSpent" DECIMAL(10,2) DEFAULT 0,
+        "ordersCount" INTEGER DEFAULT 0,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("shopifyId", "tenantId")
+      )
+    `);
+
+    // CREATE products table
+    await client.query(`
+      CREATE TABLE products (
+        id SERIAL PRIMARY KEY,
+        "shopifyId" VARCHAR(255) NOT NULL,
+        "tenantId" VARCHAR(50) NOT NULL,
+        title VARCHAR(500),
+        "bodyHtml" TEXT,
+        vendor VARCHAR(255),
+        "productType" VARCHAR(255),
+        price DECIMAL(10,2) DEFAULT 0,
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("shopifyId", "tenantId")
+      )
+    `);
+
+    // CREATE orders table
+    await client.query(`
+      CREATE TABLE orders (
+        id SERIAL PRIMARY KEY,
+        "shopifyId" VARCHAR(255) NOT NULL,
+        "tenantId" VARCHAR(50) NOT NULL,
+        "customerId" VARCHAR(255),
+        "totalPrice" DECIMAL(10,2) DEFAULT 0,
+        "financialStatus" VARCHAR(100),
+        "fulfillmentStatus" VARCHAR(100),
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("shopifyId", "tenantId")
+      )
+    `);
+    await client.query(`
+  CREATE TABLE IF NOT EXISTS custom_events (
+    id SERIAL PRIMARY KEY,
+    "tenantId" VARCHAR(50) NOT NULL,
+    "eventType" VARCHAR(100) NOT NULL,
+    "eventData" JSONB,
+    "userId" VARCHAR(100),
+    "sessionId" VARCHAR(100),
+    "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+
+    console.log('✅ New tables created successfully with correct columns');
+    await client.end();
+  } catch (error) {
+    console.error('❌ Error creating tables:', error);
+    await client.end();
+  }
+}
+
+
+// Initialize tables on startup
+createTables();
+
 
 // ROOT ROUTE - Fix "Cannot GET /"
 app.get('/', (req, res) => {
@@ -290,19 +386,19 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Test Shopify connection
-app.get('/api/shopify/test', async (req, res) => {
-  try {
-    const result = await shopifyService.testConnection();
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Shopify connection failed',
-      message: error.message
-    });
-  }
-});
+// // Test Shopify connection
+// app.get('/api/shopify/test', async (req, res) => {
+//   try {
+//     const result = await shopifyService.testConnection();
+//     res.json(result);
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       error: 'Shopify connection failed',
+//       message: error.message
+//     });
+//   }
+// });
 
 // FIXED Dashboard endpoint - Remove backslashes
 app.get('/api/dashboard/:tenantId', async (req, res) => {
@@ -498,266 +594,266 @@ app.post('/api/sync/all', async (req, res) => {
 
 // EMAIL OTP AUTHENTICATION ROUTES (NEW - ADD THESE ONLY)
 
-// Send OTP route
-app.post('/api/auth/send-otp', async (req, res) => {
-  const { email, tenantId } = req.body;
+// // Send OTP route
+// app.post('/api/auth/send-otp', async (req, res) => {
+//   const { email, tenantId } = req.body;
   
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
-  }
+//   if (!email) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'Email is required'
+//     });
+//   }
   
-  try {
-    const result = await emailService.sendOTP(email, tenantId || '1');
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send OTP'
-    });
-  }
-});
+//   try {
+//     const result = await emailService.sendOTP(email, tenantId || '1');
+//     res.json(result);
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to send OTP'
+//     });
+//   }
+// });
 
 // Verify OTP route
-app.post('/api/auth/verify-otp', async (req, res) => {
-  const { email, otp } = req.body;
+// app.post('/api/auth/verify-otp', async (req, res) => {
+//   const { email, otp } = req.body;
   
-  if (!email || !otp) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email and OTP are required'
-    });
-  }
+//   if (!email || !otp) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'Email and OTP are required'
+//     });
+//   }
   
-  try {
-    const result = emailService.verifyOTP(email, otp);
+//   try {
+//     const result = emailService.verifyOTP(email, otp);
     
-    if (result.success) {
-      // Generate simple token
-      const token = jwt.sign(
-        { 
-          email: email,
-          tenantId: result.tenantId,
-          loginTime: Date.now()
-        },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
+//     if (result.success) {
+//       // Generate simple token
+//       const token = jwt.sign(
+//         { 
+//           email: email,
+//           tenantId: result.tenantId,
+//           loginTime: Date.now()
+//         },
+//         JWT_SECRET,
+//         { expiresIn: '24h' }
+//       );
       
-      res.json({
-        success: true,
-        message: 'Access granted',
-        token,
-        user: {
-          email: email,
-          tenantId: result.tenantId
-        }
-      });
-    } else {
-      res.status(401).json(result);
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'OTP verification failed'
-    });
-  }
-});
+//       res.json({
+//         success: true,
+//         message: 'Access granted',
+//         token,
+//         user: {
+//           email: email,
+//           tenantId: result.tenantId
+//         }
+//       });
+//     } else {
+//       res.status(401).json(result);
+//     }
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: 'OTP verification failed'
+//     });
+//   }
+// });
 
 // Check email authorization endpoint
-app.post('/api/auth/check-email', async (req, res) => {
-  const { email } = req.body;
+// app.post('/api/auth/check-email', async (req, res) => {
+//   const { email } = req.body;
   
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
-  }
+//   if (!email) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'Email is required'
+//     });
+//   }
   
-  try {
-    const authorizedTenants = emailService.getAuthorizedTenants(email);
+//   try {
+//     const authorizedTenants = emailService.getAuthorizedTenants(email);
     
-    if (authorizedTenants.length > 0) {
-      res.json({
-        success: true,
-        message: `Found ${authorizedTenants.length} authorized store(s)`,
-        authorizedTenants,
-        email
-      });
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Email not authorized for any stores. Contact your administrator.',
-        email
-      });
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to check email authorization'
-    });
-  }
-});
+//     if (authorizedTenants.length > 0) {
+//       res.json({
+//         success: true,
+//         message: `Found ${authorizedTenants.length} authorized store(s)`,
+//         authorizedTenants,
+//         email
+//       });
+//     } else {
+//       res.status(403).json({
+//         success: false,
+//         message: 'Email not authorized for any stores. Contact your administrator.',
+//         email
+//       });
+//     }
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to check email authorization'
+//     });
+//   }
+// });
 
 
 // Validate email against Shopify store data
-app.post('/api/auth/validate-shopify-email', async (req, res) => {
-  const { email } = req.body;
+// app.post('/api/auth/validate-shopify-email', async (req, res) => {
+//   const { email } = req.body;
   
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
-  }
+//   if (!email) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'Email is required'
+//     });
+//   }
   
-  try {
-    console.log('🔍 Validating email against Shopify store:', email);
+//   try {
+//     console.log('🔍 Validating email against Shopify store:', email);
     
-    // Get Shopify store info first
-    const shopifyConnection = await shopifyService.testConnection();
+//     // Get Shopify store info first
+//     const shopifyConnection = await shopifyService.testConnection();
     
-    if (!shopifyConnection.success) {
-      return res.status(503).json({
-        success: false,
-        message: 'Cannot connect to Shopify store. Please try again later.'
-      });
-    }
+//     if (!shopifyConnection.success) {
+//       return res.status(503).json({
+//         success: false,
+//         message: 'Cannot connect to Shopify store. Please try again later.'
+//       });
+//     }
     
-    // Get all customers from Shopify
-    const customers = await shopifyService.getCustomers();
-    console.log(`📋 Found ${customers.length} customers in Shopify`);
+//     // Get all customers from Shopify
+//     const customers = await shopifyService.getCustomers();
+//     console.log(`📋 Found ${customers.length} customers in Shopify`);
     
-    // Check if email exists in Shopify customers
-    const customerExists = customers.find(customer => 
-      customer.email && customer.email.toLowerCase() === email.toLowerCase()
-    );
+//     // Check if email exists in Shopify customers
+//     const customerExists = customers.find(customer => 
+//       customer.email && customer.email.toLowerCase() === email.toLowerCase()
+//     );
     
-    if (customerExists) {
-      // Customer found - they can access tenant 1 (main store)
-      return res.json({
-        success: true,
-        message: `Email verified in Shopify store`,
-        isShopifyCustomer: true,
-        customerInfo: {
-          email: customerExists.email,
-          firstName: customerExists.first_name,
-          lastName: customerExists.last_name,
-          totalSpent: customerExists.total_spent,
-          ordersCount: customerExists.orders_count,
-          shopifyId: customerExists.id
-        },
-        authorizedTenants: [
-          {
-            tenantId: '1',
-            name: shopifyConnection.shop || 'TechMart Store',
-            domain: shopifyConnection.domain,
-            role: 'customer'
-          }
-        ]
-      });
-    }
+//     if (customerExists) {
+//       // Customer found - they can access tenant 1 (main store)
+//       return res.json({
+//         success: true,
+//         message: `Email verified in Shopify store`,
+//         isShopifyCustomer: true,
+//         customerInfo: {
+//           email: customerExists.email,
+//           firstName: customerExists.first_name,
+//           lastName: customerExists.last_name,
+//           totalSpent: customerExists.total_spent,
+//           ordersCount: customerExists.orders_count,
+//           shopifyId: customerExists.id
+//         },
+//         authorizedTenants: [
+//           {
+//             tenantId: '1',
+//             name: shopifyConnection.shop || 'TechMart Store',
+//             domain: shopifyConnection.domain,
+//             role: 'customer'
+//           }
+//         ]
+//       });
+//     }
     
-    // Check if it's store owner/admin email
-    const storeEmail = shopifyConnection.email;
-    const adminEmails = [
-      'admin@xeno.com',
-      'ujjwal@techmart.com',
-      storeEmail
-    ].filter(Boolean);
+//     // Check if it's store owner/admin email
+//     const storeEmail = shopifyConnection.email;
+//     const adminEmails = [
+//       'admin@xeno.com',
+//       'ujjwal@techmart.com',
+//       storeEmail
+//     ].filter(Boolean);
     
-    if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
-      return res.json({
-        success: true,
-        message: `Store admin email verified`,
-        isShopifyCustomer: false,
-        isStoreAdmin: true,
-        storeInfo: {
-          name: shopifyConnection.shop,
-          domain: shopifyConnection.domain,
-          email: storeEmail
-        },
-        authorizedTenants: [
-          {
-            tenantId: '1',
-            name: shopifyConnection.shop || 'TechMart Store', 
-            domain: shopifyConnection.domain,
-            role: 'admin'
-          }
-        ]
-      });
-    }
+//     if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
+//       return res.json({
+//         success: true,
+//         message: `Store admin email verified`,
+//         isShopifyCustomer: false,
+//         isStoreAdmin: true,
+//         storeInfo: {
+//           name: shopifyConnection.shop,
+//           domain: shopifyConnection.domain,
+//           email: storeEmail
+//         },
+//         authorizedTenants: [
+//           {
+//             tenantId: '1',
+//             name: shopifyConnection.shop || 'TechMart Store', 
+//             domain: shopifyConnection.domain,
+//             role: 'admin'
+//           }
+//         ]
+//       });
+//     }
     
-    // Email not found anywhere
-    return res.status(403).json({
-      success: false,
-      message: `Email ${email} is not registered with this Shopify store. Only store customers and administrators can access the dashboard.`,
-      suggestions: [
-        'Make sure you are a customer of this store',
-        'Contact the store administrator for access',
-        'Check if you have made any purchases from this store'
-      ]
-    });
+//     // Email not found anywhere
+//     return res.status(403).json({
+//       success: false,
+//       message: `Email ${email} is not registered with this Shopify store. Only store customers and administrators can access the dashboard.`,
+//       suggestions: [
+//         'Make sure you are a customer of this store',
+//         'Contact the store administrator for access',
+//         'Check if you have made any purchases from this store'
+//       ]
+//     });
     
-  } catch (error) {
-    console.error('❌ Shopify email validation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to validate email with Shopify store',
-      error: error.message
-    });
-  }
-});
+//   } catch (error) {
+//     console.error('❌ Shopify email validation error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to validate email with Shopify store',
+//       error: error.message
+//     });
+//   }
+// });
 
-// Multi-store email validation
-app.post('/api/auth/validate-shopify-email', async (req, res) => {
-  const { email } = req.body;
+// // Multi-store email validation
+// app.post('/api/auth/validate-shopify-email', async (req, res) => {
+//   const { email } = req.body;
   
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
-  }
+//   if (!email) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'Email is required'
+//     });
+//   }
   
-  try {
-    console.log('🔍 Multi-store validation for:', email);
+//   try {
+//     console.log('🔍 Multi-store validation for:', email);
     
-    const validation = await emailService.validateEmailAcrossAllStores(email);
+//     const validation = await emailService.validateEmailAcrossAllStores(email);
     
-    if (validation.success && validation.authorizedStores.length > 0) {
-      return res.json({
-        success: true,
-        message: validation.message,
-        authorizedStores: validation.authorizedStores,
-        totalStores: validation.totalStores,
-        multiStoreAccess: validation.totalStores > 1,
-        email: email
-      });
-    } else {
-      return res.status(403).json({
-        success: false,
-        message: 'Email not found in any Shopify stores. You must be a customer or administrator of at least one store.',
-        checkedStores: Object.keys(TENANT_STORES).length,
-        suggestions: [
-          'Make sure you have made purchases from one of our stores',
-          'Contact store administrators for access',
-          'Verify your email address is correct'
-        ]
-      });
-    }
+//     if (validation.success && validation.authorizedStores.length > 0) {
+//       return res.json({
+//         success: true,
+//         message: validation.message,
+//         authorizedStores: validation.authorizedStores,
+//         totalStores: validation.totalStores,
+//         multiStoreAccess: validation.totalStores > 1,
+//         email: email
+//       });
+//     } else {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Email not found in any Shopify stores. You must be a customer or administrator of at least one store.',
+//         checkedStores: Object.keys(TENANT_STORES).length,
+//         suggestions: [
+//           'Make sure you have made purchases from one of our stores',
+//           'Contact store administrators for access',
+//           'Verify your email address is correct'
+//         ]
+//       });
+//     }
     
-  } catch (error) {
-    console.error('❌ Multi-store validation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to validate email across stores'
-    });
-  }
-});
+//   } catch (error) {
+//     console.error('❌ Multi-store validation error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to validate email across stores'
+//     });
+//   }
+// });
 
 // DYNAMIC STORE FETCHING ENDPOINTS - ADD THESE BEFORE app.listen()
 
@@ -943,6 +1039,190 @@ app.get('/api/analytics/customer-growth', async (req, res) => {
 //     });
 //   }
 // });
+
+app.get('/api/shopify/test', async (req, res) => {
+  const { tenantId = '1' } = req.query;
+  
+  try {
+    const result = await shopifyService.testConnection(tenantId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Shopify connection failed',
+      message: error.message
+    });
+  }
+});
+
+// SIMPLE TENANT ACCESS - NO EMAIL OTP REQUIRED  
+app.post('/api/auth/verify-access', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required'
+    });
+  }
+
+  try {
+    // Hardcoded tenant mapping (as per PDF - basic auth)
+    const tenantMapping = {
+      'uaggarwal9897@gmail.com': {
+        tenants: [
+          { id: '1', name: 'techmart-dev-store', domain: 'techmart-dev-store.myshopify.com' },
+          { id: '2', name: 'techmart-dev-store2', domain: 'techmart-dev-store2.myshopify.com' }
+        ]
+      },
+      'admin@xeno.com': {
+        tenants: [
+          { id: '1', name: 'techmart-dev-store', domain: 'techmart-dev-store.myshopify.com' },
+          { id: '2', name: 'techmart-dev-store2', domain: 'techmart-dev-store2.myshopify.com' }
+        ]
+      }
+    };
+
+    if (tenantMapping[email]) {
+      // Generate JWT token
+      const token = jwt.sign(
+        { 
+          email: email,
+          tenants: tenantMapping[email].tenants,
+          timestamp: new Date().toISOString()
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Access verified successfully',
+        token: token,
+        tenants: tenantMapping[email].tenants
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'No tenant access found for this email'
+      });
+    }
+
+  } catch (error) {
+    console.error('Access verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify access'
+    });
+  }
+});
+// Custom Events Storage and Analytics - ADD THESE ENDPOINTS
+app.post('/api/events/track', async (req, res) => {
+  const { tenantId, eventType, eventData, userId, sessionId } = req.body;
+  
+  if (!tenantId || !eventType) {
+    return res.status(400).json({
+      success: false,
+      message: 'tenantId and eventType are required'
+    });
+  }
+
+  const client = new Client(dbConfig);
+  
+  try {
+    await client.connect();
+    
+    // Create events table if not exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS custom_events (
+        id SERIAL PRIMARY KEY,
+        "tenantId" VARCHAR(50) NOT NULL,
+        "eventType" VARCHAR(100) NOT NULL,
+        "eventData" JSONB,
+        "userId" VARCHAR(100),
+        "sessionId" VARCHAR(100),
+        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Insert event
+    const result = await client.query(`
+      INSERT INTO custom_events ("tenantId", "eventType", "eventData", "userId", "sessionId")
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
+    `, [tenantId, eventType, JSON.stringify(eventData || {}), userId, sessionId]);
+
+    await client.end();
+
+    res.json({
+      success: true,
+      message: 'Event tracked successfully',
+      eventId: result.rows[0].id
+    });
+
+  } catch (error) {
+    await client.end();
+    console.error('Error tracking event:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to track event'
+    });
+  }
+});
+
+// Cart Abandonment Analytics - ADD THIS ENDPOINT
+app.get('/api/analytics/cart-abandonment', async (req, res) => {
+  const { tenantId } = req.query;
+  const client = new Client(dbConfig);
+
+  try {
+    await client.connect();
+
+    const result = await client.query(`
+      WITH cart_events AS (
+        SELECT 
+          DATE("createdAt") as date,
+          SUM(CASE WHEN "eventType" = 'cart_abandonment' THEN 1 ELSE 0 END) as abandoned_carts,
+          SUM(CASE WHEN "eventType" = 'checkout_started' THEN 1 ELSE 0 END) as checkouts_started,
+          SUM(CASE WHEN "eventType" = 'checkout_completed' THEN 1 ELSE 0 END) as checkouts_completed
+        FROM custom_events
+        WHERE "tenantId" = $1
+        AND "eventType" IN ('cart_abandonment', 'checkout_started', 'checkout_completed')
+        GROUP BY DATE("createdAt")
+        ORDER BY date DESC
+        LIMIT 30
+      )
+      SELECT 
+        date,
+        abandoned_carts,
+        checkouts_started,
+        checkouts_completed,
+        CASE 
+          WHEN checkouts_started > 0 
+          THEN ROUND((abandoned_carts::numeric / checkouts_started::numeric) * 100, 2)
+          ELSE 0 
+        END as abandonment_rate
+      FROM cart_events
+    `, [tenantId]);
+
+    await client.end();
+
+    res.json({
+      success: true,
+      data: result.rows
+    });
+
+  } catch (error) {
+    await client.end();
+    console.error('Error fetching cart abandonment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch cart abandonment data'
+    });
+  }
+});
+
+
 
 // Start server
 app.listen(PORT, () => {

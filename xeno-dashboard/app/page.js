@@ -5,6 +5,7 @@ import { useAuth } from './context/AuthContext';
 import OrdersByDateChart from '../components/OrdersByDateChart';
 import TopCustomersTable from '../components/TopCustomersTable';
 import CustomerGrowthChart from '../components/CustomerGrowthChart';
+import CustomEventsChart from '../components/CustomEventsChart';
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -227,6 +228,7 @@ const tenantId = user?.tenantId || '1';
             </p>
           </div>
           <CustomerGrowthChart tenantId={tenantId} />
+            <CustomEventsChart tenantId={tenantId} />
 
          <OrdersByDateChart
   apiData={ordersData}
