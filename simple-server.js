@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const { Client } = require('pg');
 const shopifyService = require('./src/services/shopifyService');
 const emailService = require('./src/services/emailService');
+const partnersService = require('./src/services/partnersService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -51,6 +52,144 @@ app.get('/', (req, res) => {
       }
     }
   });
+});
+
+app.get('/api/stores', async (req, res) => {
+  try {
+    console.log('🏪 Fetching organization stores...');
+    
+    const storesResult = await partnersService.getOrganizationStores();
+    
+    if (storesResult.success) {
+      res.json({
+        success: true,
+        stores: storesResult.stores.map(store => ({
+          tenantId: partnersService.getStoreConfig(store.domain)?.tenantId || store.id,
+          name: store.name,
+          domain: store.domain,
+          status: store.status,
+          plan: store.plan
+        })),
+        totalStores: storesResult.totalStores,
+        message: `Found ${storesResult.totalStores} stores`
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch stores',
+        error: storesResult.error
+      });
+    }
+  } catch (error) {
+    console.error('❌ Store fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch organization stores'
+    });
+  }
+});
+
+// Validate email across all organization stores
+app.post('/api/auth/validate-email-all-stores', async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required'
+    });
+  }
+  
+  try {
+    console.log('🔍 Validating email across all stores:', email);
+    
+    // Get all organization stores
+    const storesResult = await partnersService.getOrganizationStores();
+    
+    if (!storesResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Cannot fetch organization stores'
+      });
+    }
+    
+    const authorizedStores = [];
+    
+    // Check each store
+    for (const store of storesResult.stores) {
+      try {
+        const storeConfig = partnersService.getStoreConfig(store.domain);
+        
+        if (!storeConfig) {
+          console.log(`⚠️ No config found for store: ${store.domain}`);
+          continue;
+        }
+        
+        // For store1 (techmart-dev-store), use existing shopifyService
+        if (store.domain === 'techmart-dev-store.myshopify.com') {
+          const validation = await emailService.validateEmailWithShopify(email);
+          
+          if (validation.valid) {
+            authorizedStores.push({
+              tenantId: storeConfig.tenantId,
+              storeName: store.name,
+              domain: store.domain,
+              role: validation.type,
+              customerInfo: validation.customerInfo || null,
+              storeInfo: validation.storeInfo
+            });
+          }
+        } else {
+          // For store2, check against admin emails
+          const adminEmails = [
+            'admin@xeno.com',
+            'ujjwal@techmart.com',
+            'uaggarwal9897@gmail.com'
+          ];
+          
+          if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
+            authorizedStores.push({
+              tenantId: storeConfig.tenantId,
+              storeName: store.name,
+              domain: store.domain,
+              role: 'admin',
+              storeInfo: {
+                name: store.name,
+                domain: store.domain
+              }
+            });
+          }
+        }
+      } catch (storeError) {
+        console.error(`❌ Error checking store ${store.domain}:`, storeError.message);
+      }
+    }
+    
+    if (authorizedStores.length > 0) {
+      res.json({
+        success: true,
+        message: `Found access to ${authorizedStores.length} store(s)`,
+        authorizedStores,
+        totalStores: authorizedStores.length,
+        multiStoreAccess: authorizedStores.length > 1,
+        email: email
+      });
+    } else {
+      res.status(403).json({
+        success: false,
+        message: `Email ${email} is not authorized for any stores in your organization.`,
+        checkedStores: storesResult.stores.length,
+        storeList: storesResult.stores.map(s => s.name)
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Multi-store email validation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate email across organization stores'
+    });
+  }
 });
 
 // Environment debug
@@ -573,6 +712,237 @@ app.post('/api/auth/validate-shopify-email', async (req, res) => {
   }
 });
 
+// Multi-store email validation
+app.post('/api/auth/validate-shopify-email', async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required'
+    });
+  }
+  
+  try {
+    console.log('🔍 Multi-store validation for:', email);
+    
+    const validation = await emailService.validateEmailAcrossAllStores(email);
+    
+    if (validation.success && validation.authorizedStores.length > 0) {
+      return res.json({
+        success: true,
+        message: validation.message,
+        authorizedStores: validation.authorizedStores,
+        totalStores: validation.totalStores,
+        multiStoreAccess: validation.totalStores > 1,
+        email: email
+      });
+    } else {
+      return res.status(403).json({
+        success: false,
+        message: 'Email not found in any Shopify stores. You must be a customer or administrator of at least one store.',
+        checkedStores: Object.keys(TENANT_STORES).length,
+        suggestions: [
+          'Make sure you have made purchases from one of our stores',
+          'Contact store administrators for access',
+          'Verify your email address is correct'
+        ]
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Multi-store validation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate email across stores'
+    });
+  }
+});
+
+// DYNAMIC STORE FETCHING ENDPOINTS - ADD THESE BEFORE app.listen()
+
+// Get all organization stores
+app.get('/api/stores', async (req, res) => {
+  try {
+    console.log('🏪 Fetching organization stores...');
+    
+    const storesResult = await partnersService.getOrganizationStores();
+    
+    if (storesResult.success) {
+      res.json({
+        success: true,
+        stores: storesResult.stores.map(store => ({
+          tenantId: partnersService.getStoreConfig(store.domain)?.tenantId || store.id,
+          name: store.name,
+          domain: store.domain,
+          status: store.status,
+          plan: store.plan
+        })),
+        totalStores: storesResult.totalStores,
+        message: `Found ${storesResult.totalStores} stores`
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch stores',
+        error: storesResult.error
+      });
+    }
+  } catch (error) {
+    console.error('❌ Store fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch organization stores'
+    });
+  }
+});
+app.get('/api/analytics/customer-growth', async (req, res) => {
+  const { tenantId, startDate, endDate } = req.query;
+  const client = new Client(dbConfig);
+
+  try {
+    await client.connect();
+
+    let query = `
+      SELECT DATE("createdAt") as date, COUNT(*) as "newCustomers"
+      FROM customers
+      WHERE "tenantId" = $1
+    `;
+    let params = [tenantId];
+
+    if (startDate && endDate) {
+      query += ` AND "createdAt" BETWEEN $2 AND $3`;
+      params.push(startDate, endDate);
+    }
+
+    query += ` GROUP BY DATE("createdAt") ORDER BY date ASC`;
+
+    const result = await client.query(query, params);
+    await client.end();
+
+    res.json({
+      success: true,
+      data: result.rows.map(row => ({
+        date: row.date,
+        newCustomers: parseInt(row.newCustomers, 10)
+      }))
+    });
+  } catch (error) {
+    await client.end();
+    console.error('Error fetching customer growth:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching customer growth'
+    });
+  }
+});
+
+
+
+
+// // Validate email across all organization stores
+// app.post('/api/auth/validate-email-all-stores', async (req, res) => {
+//   const { email } = req.body;
+  
+//   if (!email) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'Email is required'
+//     });
+//   }
+  
+//   try {
+//     console.log('🔍 Validating email across all stores:', email);
+    
+//     // Get all organization stores
+//     const storesResult = await partnersService.getOrganizationStores();
+    
+//     if (!storesResult.success) {
+//       return res.status(500).json({
+//         success: false,
+//         message: 'Cannot fetch organization stores'
+//       });
+//     }
+    
+//     const authorizedStores = [];
+    
+//     // Check each store
+//     for (const store of storesResult.stores) {
+//       try {
+//         const storeConfig = partnersService.getStoreConfig(store.domain);
+        
+//         if (!storeConfig) {
+//           console.log(`⚠️ No config found for store: ${store.domain}`);
+//           continue;
+//         }
+        
+//         // For store1 (techmart-dev-store), use existing shopifyService
+//         if (store.domain === 'techmart-dev-store.myshopify.com') {
+//           const validation = await emailService.validateEmailWithShopify(email);
+          
+//           if (validation.valid) {
+//             authorizedStores.push({
+//               tenantId: storeConfig.tenantId,
+//               storeName: store.name,
+//               domain: store.domain,
+//               role: validation.type,
+//               customerInfo: validation.customerInfo || null,
+//               storeInfo: validation.storeInfo
+//             });
+//           }
+//         } else {
+//           // For other stores, simulate validation (you can extend this)
+//           // Check against admin emails for now
+//           const adminEmails = [
+//             'admin@xeno.com',
+//             'ujjwal@techmart.com',
+//             'uaggarwal9897@gmail.com'
+//           ];
+          
+//           if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
+//             authorizedStores.push({
+//               tenantId: storeConfig.tenantId,
+//               storeName: store.name,
+//               domain: store.domain,
+//               role: 'admin',
+//               storeInfo: {
+//                 name: store.name,
+//                 domain: store.domain
+//               }
+//             });
+//           }
+//         }
+//       } catch (storeError) {
+//         console.error(`❌ Error checking store ${store.domain}:`, storeError.message);
+//       }
+//     }
+    
+//     if (authorizedStores.length > 0) {
+//       res.json({
+//         success: true,
+//         message: `Found access to ${authorizedStores.length} store(s)`,
+//         authorizedStores,
+//         totalStores: authorizedStores.length,
+//         multiStoreAccess: authorizedStores.length > 1,
+//         email: email
+//       });
+//     } else {
+//       res.status(403).json({
+//         success: false,
+//         message: `Email ${email} is not authorized for any stores in your organization.`,
+//         checkedStores: storesResult.stores.length,
+//         storeList: storesResult.stores.map(s => s.name)
+//       });
+//     }
+    
+//   } catch (error) {
+//     console.error('❌ Multi-store email validation error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to validate email across organization stores'
+//     });
+//   }
+// });
 
 // Start server
 app.listen(PORT, () => {

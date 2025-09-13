@@ -1,12 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
-  const [userInfo, setUserInfo] = useState(null);
+  const [availableStores, setAvailableStores] = useState([]);
+  const [selectedStore, setSelectedStore] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -14,14 +15,14 @@ export default function Login() {
   const { sendOTP, verifyOTP } = useAuth();
   const router = useRouter();
 
-  const validateShopifyEmail = async (e) => {
+  const validateEmailAcrossStores = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setMessage('');
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/validate-shopify-email', {
+      const response = await fetch('http://localhost:3001/api/auth/validate-email-all-stores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -29,20 +30,21 @@ export default function Login() {
 
       const data = await response.json();
 
-      if (data.success) {
-        setUserInfo(data);
-        setStep('confirmed');
+      if (data.success && data.authorizedStores.length > 0) {
+        setAvailableStores(data.authorizedStores);
+        setSelectedStore(data.authorizedStores[0].tenantId);
+        setStep('storeSelection');
         
-        if (data.isShopifyCustomer) {
-          setMessage(`✅ Verified Shopify customer! You've spent $${data.customerInfo.totalSpent} across ${data.customerInfo.ordersCount} orders.`);
-        } else if (data.isStoreAdmin) {
-          setMessage(`👑 Store administrator verified! Full dashboard access granted.`);
+        if (data.multiStoreAccess) {
+          setMessage(`🎉 Multi-store access! You have access to ${data.totalStores} stores in the organization.`);
+        } else {
+          setMessage(`✅ Store access verified for ${data.authorizedStores[0].storeName}`);
         }
       } else {
         setError(data.message);
       }
     } catch (error) {
-      setError('Failed to validate email with Shopify store.');
+      setError('Failed to validate email across organization stores.');
     } finally {
       setLoading(false);
     }
@@ -53,7 +55,7 @@ export default function Login() {
     setError('');
     setMessage('');
 
-    const result = await sendOTP(email, '1');
+    const result = await sendOTP(email, selectedStore);
 
     if (result.success) {
       setStep('otp');
@@ -85,11 +87,11 @@ export default function Login() {
         <div className="text-center mb-8">
           <div className="text-4xl mb-4">🛒</div>
           <h2 className="text-3xl font-bold text-gray-800">Xeno Analytics</h2>
-          <p className="text-gray-600 mt-2">Shopify-Verified Dashboard</p>
+          <p className="text-gray-600 mt-2">Organization Multi-Store Access</p>
         </div>
         
         {step === 'email' && (
-          <form onSubmit={validateShopifyEmail} className="space-y-6">
+          <form onSubmit={validateEmailAcrossStores} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Your Email Address
@@ -102,7 +104,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <p className="text-xs text-gray-500 mt-1">We'll check if you're a customer or admin of this Shopify store</p>
+              <p className="text-xs text-gray-500 mt-1">We'll check your access across all organization stores</p>
             </div>
 
             <button
@@ -110,30 +112,47 @@ export default function Login() {
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
             >
-              {loading ? 'Validating with Shopify...' : 'Validate Shopify Access'}
+              {loading ? 'Checking Organization Access...' : 'Find My Store Access'}
             </button>
           </form>
         )}
 
-        {step === 'confirmed' && userInfo && (
+        {step === 'storeSelection' && (
           <div className="space-y-6">
-            <div className="text-center">
-              {userInfo.isShopifyCustomer ? (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="text-green-800 font-semibold mb-2">✅ Shopify Customer Verified</div>
-                  <div className="text-sm text-green-700">
-                    <p><strong>Name:</strong> {userInfo.customerInfo.firstName} {userInfo.customerInfo.lastName}</p>
-                    <p><strong>Total Spent:</strong> ${userInfo.customerInfo.totalSpent}</p>
-                    <p><strong>Orders:</strong> {userInfo.customerInfo.ordersCount}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <div className="text-yellow-800 font-semibold mb-2">👑 Store Administrator</div>
-                  <div className="text-sm text-yellow-700">
-                    <p><strong>Store:</strong> {userInfo.storeInfo.name}</p>
-                    <p><strong>Domain:</strong> {userInfo.storeInfo.domain}</p>
-                  </div>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="text-green-800 font-semibold mb-2">✅ Organization Access Found</div>
+              <div className="text-sm text-green-700">
+                <p><strong>Email:</strong> {email}</p>
+                <p><strong>Authorized Stores:</strong> {availableStores.length}</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Store to Access
+              </label>
+              <select
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {availableStores.map(store => (
+                  <option key={store.tenantId} value={store.tenantId}>
+                    {store.storeName} ({store.role}) - {store.domain}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+              {availableStores.find(s => s.tenantId === selectedStore) && (
+                <div className="text-blue-800">
+                  <p><strong>Selected:</strong> {availableStores.find(s => s.tenantId === selectedStore).storeName}</p>
+                  <p><strong>Domain:</strong> {availableStores.find(s => s.tenantId === selectedStore).domain}</p>
+                  <p><strong>Role:</strong> {availableStores.find(s => s.tenantId === selectedStore).role}</p>
+                  {availableStores.find(s => s.tenantId === selectedStore).customerInfo && (
+                    <p><strong>Customer Spent:</strong> ${availableStores.find(s => s.tenantId === selectedStore).customerInfo?.totalSpent?.toFixed(2)}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -143,7 +162,7 @@ export default function Login() {
               disabled={loading}
               className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
             >
-              {loading ? 'Sending Secure OTP...' : 'Send Dashboard Access OTP'}
+              {loading ? 'Sending Store OTP...' : 'Access Selected Store'}
             </button>
             
             <button
@@ -159,13 +178,17 @@ export default function Login() {
           <form onSubmit={handleVerifyOTP} className="space-y-6">
             <div className="text-center text-sm text-gray-600 mb-4 bg-blue-50 p-3 rounded-lg">
               <div><strong>📧 Email:</strong> {email}</div>
-              <div><strong>🏪 Store:</strong> {userInfo?.storeInfo?.name || userInfo?.authorizedTenants?.[0]?.name}</div>
-              <div><strong>👤 Access:</strong> {userInfo?.isShopifyCustomer ? 'Customer' : 'Administrator'}</div>
+              <div><strong>🏪 Store:</strong> {availableStores.find(s => s.tenantId === selectedStore)?.storeName}</div>
+              <div><strong>🌐 Domain:</strong> {availableStores.find(s => s.tenantId === selectedStore)?.domain}</div>
+              <div><strong>🔑 Access:</strong> {availableStores.find(s => s.tenantId === selectedStore)?.role}</div>
+              {availableStores.length > 1 && (
+                <div><strong>🔥 Total Access:</strong> {availableStores.length} stores</div>
+              )}
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Enter 6-digit OTP from Email
+                Enter 6-digit Organization OTP
               </label>
               <input
                 type="text"
@@ -183,15 +206,15 @@ export default function Login() {
               disabled={loading || otp.length !== 6}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
             >
-              {loading ? 'Verifying Access...' : 'Access Dashboard'}
+              {loading ? 'Verifying Access...' : 'Access Store Dashboard'}
             </button>
             
             <button
               type="button"
-              onClick={() => setStep('confirmed')}
+              onClick={() => setStep('storeSelection')}
               className="w-full text-gray-600 hover:text-gray-800"
             >
-              ← Back
+              ← Change Store Selection
             </button>
           </form>
         )}
@@ -209,11 +232,11 @@ export default function Login() {
         )}
 
         <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <p className="text-sm font-medium text-gray-700 mb-2">🔒 Shopify Store Verification:</p>
+          <p className="text-sm font-medium text-gray-700 mb-2">🏢 Organization Stores:</p>
           <div className="text-xs text-gray-600 space-y-1">
-            <p>• Only verified Shopify customers can access</p>
-            <p>• Store administrators have full access</p>
-            <p>• Email must exist in store records</p>
+            <p>• techmart-dev-store (Main)</p>
+            <p>• techmart-dev-store2 (Secondary)</p>
+            <p>• Multi-tenant data isolation</p>
           </div>
         </div>
       </div>

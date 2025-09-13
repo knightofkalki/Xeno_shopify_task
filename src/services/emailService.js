@@ -16,12 +16,12 @@ const transporter = nodemailer.createTransport({
 });
 
 class EmailService {
-  // Validate email against Shopify store
+  // Simple email validation with Shopify (SINGLE STORE)
   async validateEmailWithShopify(email) {
     try {
       console.log('🔍 Validating email with Shopify:', email);
       
-      // Get Shopify connection
+      // Get Shopify connection (single store)
       const shopifyConnection = await shopifyService.testConnection();
       if (!shopifyConnection.success) {
         throw new Error('Cannot connect to Shopify store');
@@ -39,7 +39,6 @@ class EmailService {
         return {
           valid: true,
           type: 'customer',
-          tenantId: '1',
           customerInfo: {
             shopifyId: customer.id,
             email: customer.email,
@@ -65,7 +64,6 @@ class EmailService {
         return {
           valid: true,
           type: 'admin',
-          tenantId: '1',
           storeInfo: {
             name: shopifyConnection.shop,
             domain: shopifyConnection.domain,
@@ -76,7 +74,7 @@ class EmailService {
       
       return {
         valid: false,
-        message: 'Email not found in Shopify store customers or admin list'
+        message: 'Email not found in Shopify store'
       };
       
     } catch (error) {
@@ -88,10 +86,10 @@ class EmailService {
     }
   }
 
-  // Send OTP with Shopify validation
+  // Send OTP (SIMPLIFIED)
   async sendOTP(email, tenantId = '1') {
     try {
-      // First validate email with Shopify
+      // Validate email with Shopify
       const validation = await this.validateEmailWithShopify(email);
       
       if (!validation.valid) {
@@ -110,17 +108,16 @@ class EmailService {
       
       const otpExpires = Date.now() + 300000; // 5 minutes
       
-      // Store OTP with validation data
+      // Store OTP with tenant ID
       otpStore.set(email, {
         otp,
         expires: otpExpires,
-        tenantId: validation.tenantId,
+        tenantId,
         userType: validation.type,
         validationData: validation,
         authorizedAt: Date.now()
       });
       
-      // Create personalized email based on user type
       const isCustomer = validation.type === 'customer';
       const storeName = validation.storeInfo.name;
       const userName = isCustomer ? validation.customerInfo.name : 'Store Administrator';
@@ -128,16 +125,22 @@ class EmailService {
       const mailOptions = {
         to: email,
         from: EMAIL_ID,
-        subject: `${storeName} - Dashboard Access OTP`,
+        subject: `${storeName} - Tenant ${tenantId} Dashboard Access`,
         html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center;">
             <h1 style="color: white; margin: 0;">🛒 ${storeName}</h1>
-            <p style="color: white; margin: 5px 0;">Xeno Analytics Dashboard</p>
+            <p style="color: white; margin: 5px 0;">Tenant ${tenantId} Dashboard</p>
           </div>
           
           <div style="padding: 30px; background: #f9f9f9;">
             <h2 style="color: #333;">Hi ${userName}! 👋</h2>
+            
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <p style="margin: 0; color: #1976d2;"><strong>🎯 Tenant Access</strong></p>
+              <p style="margin: 5px 0; color: #1976d2;"><strong>Store:</strong> ${storeName}</p>
+              <p style="margin: 5px 0 0 0; color: #1976d2;"><strong>Tenant ID:</strong> ${tenantId}</p>
+            </div>
             
             ${isCustomer ? `
               <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; margin: 15px 0;">
@@ -149,30 +152,25 @@ class EmailService {
               </div>
             ` : `
               <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <p style="margin: 0; color: #856404;"><strong>👑 Store Administrator Access</strong></p>
-                <p style="margin: 5px 0 0 0; color: #856404;">Full dashboard access granted</p>
+                <p style="margin: 0; color: #856404;"><strong>👑 Store Administrator</strong></p>
+                <p style="margin: 5px 0 0 0; color: #856404;">Full tenant management access</p>
               </div>
             `}
             
-            <p style="color: #666;">Your secure access code for ${storeName} dashboard:</p>
+            <p style="color: #666;">Your secure access code:</p>
             
             <div style="background: #667eea; color: white; font-size: 32px; font-weight: bold; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; letter-spacing: 8px;">
               ${otp}
             </div>
             
             <div style="background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 8px;">
-              <p style="margin: 0; color: #721c24;"><strong>⏰ Valid for 5 minutes only</strong></p>
-              <p style="margin: 5px 0 0 0; color: #721c24;">🔒 This OTP is linked to your Shopify account</p>
-            </div>
-            
-            <div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 8px; margin-top: 15px;">
-              <p style="margin: 0; color: #0c5460;"><strong>🏪 Store:</strong> ${storeName}</p>
-              <p style="margin: 5px 0 0 0; color: #0c5460;"><strong>🌐 Domain:</strong> ${validation.storeInfo.domain}</p>
+              <p style="margin: 0; color: #721c24;"><strong>⏰ Valid for 5 minutes</strong></p>
+              <p style="margin: 5px 0 0 0; color: #721c24;">🔒 Tenant ${tenantId} data isolation active</p>
             </div>
             
             <p style="color: #666; margin-top: 20px; font-size: 12px;">
-              This email was sent because ${email} is verified in our Shopify store records. 
-              If you didn't request access, please contact the store administrator.
+              This OTP grants access to Tenant ${tenantId} data in ${storeName}.
+              Data is isolated by tenant identifier as per multi-tenant architecture.
             </p>
           </div>
         </div>`
@@ -182,8 +180,8 @@ class EmailService {
       
       return {
         success: true,
-        message: `Secure OTP sent to verified ${validation.type}: ${email}`,
-        userType: validation.type,
+        message: `OTP sent for ${storeName} - Tenant ${tenantId} access`,
+        tenantId: tenantId,
         storeName: storeName,
         expiresIn: '5 minutes'
       };
@@ -192,12 +190,12 @@ class EmailService {
       console.error('Email send error:', error);
       return {
         success: false,
-        message: 'Failed to send OTP. Please try again.'
+        message: 'Failed to send OTP'
       };
     }
   }
   
-  // Enhanced OTP verification
+  // Verify OTP (SIMPLIFIED)
   verifyOTP(email, otp) {
     const storedData = otpStore.get(email);
     
@@ -211,7 +209,7 @@ class EmailService {
     if (storedData.otp !== otp || storedData.expires < Date.now()) {
       return {
         success: false,
-        message: 'Invalid or expired OTP. Please request a new one.'
+        message: 'Invalid or expired OTP'
       };
     }
     
@@ -223,7 +221,7 @@ class EmailService {
       tenantId: storedData.tenantId,
       userType: storedData.userType,
       validationData: storedData.validationData,
-      message: 'Shopify-verified access granted',
+      message: `Access granted to Tenant ${storedData.tenantId}`,
       authorizedEmail: email
     };
   }

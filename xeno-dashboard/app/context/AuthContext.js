@@ -27,7 +27,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  // Send OTP to email
+  // FIXED: Send OTP function
   const sendOTP = async (email, tenantId = '1') => {
     try {
       const response = await fetch('http://localhost:3001/api/auth/send-otp', {
@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Verify OTP and login
+  // FIXED: Verify OTP function
   const verifyOTP = async (email, otp) => {
     try {
       const response = await fetch('http://localhost:3001/api/auth/verify-otp', {

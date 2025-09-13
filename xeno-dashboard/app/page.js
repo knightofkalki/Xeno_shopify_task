@@ -2,11 +2,19 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from './context/AuthContext';
+import OrdersByDateChart from '../components/OrdersByDateChart';
+import TopCustomersTable from '../components/TopCustomersTable';
+import CustomerGrowthChart from '../components/CustomerGrowthChart';
 
 const BACKEND_URL = 'http://localhost:3001';
 
 export default function Dashboard() {
   const { isAuthenticated, loading: authLoading, user, logout, getAuthHeaders } = useAuth();
+  const [ordersData, setOrdersData] = useState([]);
+const [startDate, setStartDate] = useState('');
+const [endDate, setEndDate] = useState('');
+const tenantId = user?.tenantId || '1';
+
   const router = useRouter();
   
   // All your existing state variables remain the same
@@ -19,6 +27,23 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [syncStatus, setSyncStatus] = useState('');
+
+  useEffect(() => {
+  async function fetchOrders() {
+    let url = `${BACKEND_URL}/api/analytics/orders-by-date?tenantId=${tenantId}`;
+    if (startDate && endDate) {
+      url += `&startDate=${startDate}&endDate=${endDate}`;
+    }
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.success) {
+      setOrdersData(json.data);
+    }
+  }
+  fetchOrders();
+}, [tenantId, startDate, endDate]);
+
+
 
   // Add auth check
   useEffect(() => {
@@ -182,7 +207,8 @@ export default function Dashboard() {
               {isLoading ? '...' : stats.totalCustomers.toLocaleString()}
             </p>
           </div>
-          
+          <TopCustomersTable tenantId={tenantId} />
+
           <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
             <h3 className="text-lg font-semibold text-gray-700 mb-2">📦 Total Products</h3>
             <p className="text-3xl font-bold text-green-600">
@@ -191,11 +217,26 @@ export default function Dashboard() {
           </div>
           
           <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500">
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">🛍️ Total Orders</h3>
+            <h1 className="text-3xl font-extrabold text-blue-700 mb-4">
+  Total Orders: {ordersData.reduce((sum, d) => sum + d.orders, 0)}
+</h1>
+
+
             <p className="text-3xl font-bold text-orange-600">
               {isLoading ? '...' : stats.totalOrders.toLocaleString()}
             </p>
           </div>
+          <CustomerGrowthChart tenantId={tenantId} />
+
+         <OrdersByDateChart
+  apiData={ordersData}
+  startDate={startDate}
+  endDate={endDate}
+  setStartDate={setStartDate}
+  setEndDate={setEndDate}
+/>
+
+
           
           <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500">
             <h3 className="text-lg font-semibold text-gray-700 mb-2">💰 Total Revenue</h3>
@@ -203,6 +244,7 @@ export default function Dashboard() {
               {isLoading ? '...' : `$${stats.totalRevenue.toFixed(2)}`}
             </p>
           </div>
+          
         </div>
 
         {/* All your existing sync controls and quick actions remain exactly the same */}
