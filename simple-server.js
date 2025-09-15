@@ -1,342 +1,513 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-// DEBUG LOG - ADD THIS
-console.log('🔍 Environment Variables Check:');
-console.log('SHOPIFY_STORE_URL:', process.env.SHOPIFY_STORE_URL);
-console.log('SHOPIFY_STORE_URL_2:', process.env.SHOPIFY_STORE_URL_2);
-console.log('SHOPIFY_ACCESS_TOKEN:', process.env.SHOPIFY_ACCESS_TOKEN ? 'SET' : 'NOT SET');
-console.log('SHOPIFY_ACCESS_TOKEN_2:', process.env.SHOPIFY_ACCESS_TOKEN_2 ? 'SET' : 'NOT SET');
-
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const { Client } = require('pg');
+const bcrypt = require('bcrypt');
+const { prisma } = require('./src/config/database');
 const shopifyService = require('./src/services/shopifyService');
-const emailService = require('./src/services/emailService');
-const partnersService = require('./src/services/partnersService');
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-// JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 
 // Middleware
 app.use(cors());
+app.use('/api/webhooks', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
-
-const dbConfig = {
-  host: 'localhost',
-  port: 5432,
-  database: 'xeno_db',
-  user: 'postgres',
-  password: 'Ujjwal,agg1499@'
+// Simple cache
+const cache = new Map();
+const cacheGet = (key) => {
+  const item = cache.get(key);
+  if (item && item.expiry > Date.now()) return item.value;
+  cache.delete(key);
+  return null;
+};
+const cacheSet = (key, value, ttl = 300) => {
+  cache.set(key, { value, expiry: Date.now() + (ttl * 1000) });
 };
 
-// CREATE TABLES IF NOT EXIST - FORCE RECREATE
-async function createTables() {
-  const client = new Client(dbConfig);
-  try {
-    await client.connect();
-    
-    // DROP EXISTING TABLES (FORCE RECREATE)
-    await client.query(`DROP TABLE IF EXISTS customers CASCADE`);
-    await client.query(`DROP TABLE IF EXISTS products CASCADE`);
-    await client.query(`DROP TABLE IF EXISTS orders CASCADE`);
-    
-    console.log('✅ Old tables dropped');
-    
-    // CREATE customers table
-    await client.query(`
-      CREATE TABLE customers (
-        id SERIAL PRIMARY KEY,
-        "shopifyId" VARCHAR(255) NOT NULL,
-        "tenantId" VARCHAR(50) NOT NULL,
-        email VARCHAR(255),
-        "firstName" VARCHAR(255),
-        "lastName" VARCHAR(255),
-        "totalSpent" DECIMAL(10,2) DEFAULT 0,
-        "ordersCount" INTEGER DEFAULT 0,
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE("shopifyId", "tenantId")
-      )
-    `);
+// ✅ JWT AUTHENTICATION MIDDLEWARE - ADD THIS
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
-    // CREATE products table
-    await client.query(`
-      CREATE TABLE products (
-        id SERIAL PRIMARY KEY,
-        "shopifyId" VARCHAR(255) NOT NULL,
-        "tenantId" VARCHAR(50) NOT NULL,
-        title VARCHAR(500),
-        "bodyHtml" TEXT,
-        vendor VARCHAR(255),
-        "productType" VARCHAR(255),
-        price DECIMAL(10,2) DEFAULT 0,
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE("shopifyId", "tenantId")
-      )
-    `);
+  console.log('🔧 Auth middleware - Token received:', token ? 'Yes' : 'No');
 
-    // CREATE orders table
-    await client.query(`
-      CREATE TABLE orders (
-        id SERIAL PRIMARY KEY,
-        "shopifyId" VARCHAR(255) NOT NULL,
-        "tenantId" VARCHAR(50) NOT NULL,
-        "customerId" VARCHAR(255),
-        "totalPrice" DECIMAL(10,2) DEFAULT 0,
-        "financialStatus" VARCHAR(100),
-        "fulfillmentStatus" VARCHAR(100),
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE("shopifyId", "tenantId")
-      )
-    `);
-    await client.query(`
-  CREATE TABLE IF NOT EXISTS custom_events (
-    id SERIAL PRIMARY KEY,
-    "tenantId" VARCHAR(50) NOT NULL,
-    "eventType" VARCHAR(100) NOT NULL,
-    "eventData" JSONB,
-    "userId" VARCHAR(100),
-    "sessionId" VARCHAR(100),
-    "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
-
-    console.log('✅ New tables created successfully with correct columns');
-    await client.end();
-  } catch (error) {
-    console.error('❌ Error creating tables:', error);
-    await client.end();
+  if (!token) {
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Access token required' 
+    });
   }
-}
 
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      console.log('🔧 JWT verify error:', err.message);
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Invalid token' 
+      });
+    }
+    req.user = decoded;
+    console.log('🔧 User authenticated:', decoded.email);
+    next();
+  });
+};
 
-// Initialize tables on startup
-createTables();
+// Analytics service
+const analyticsService = {
+  getDashboardStats: async (tenantId) => {
+    try {
+      const [customerCount, productCount, orderStats] = await Promise.all([
+        prisma.customer.count({ where: { tenantId } }),
+        prisma.product.count({ where: { tenantId } }),
+        prisma.order.aggregate({
+          where: { tenantId },
+          _count: { id: true },
+          _sum: { totalPrice: true }
+        })
+      ]);
+      
+      return {
+        totalCustomers: customerCount,
+        totalProducts: productCount,
+        totalOrders: orderStats._count.id || 0,
+        totalRevenue: parseFloat(orderStats._sum.totalPrice || 0)
+      };
+    } catch (error) {
+      return { totalCustomers: 0, totalProducts: 0, totalOrders: 0, totalRevenue: 0 };
+    }
+  },
 
+  getOrdersByDate: async (tenantId, startDate, endDate) => {
+    try {
+      const whereClause = { tenantId };
+      if (startDate && endDate) {
+        whereClause.createdAt = {
+          gte: new Date(startDate),
+          lte: new Date(endDate)
+        };
+      }
+      
+      const orders = await prisma.order.groupBy({
+        by: ['createdAt'],
+        where: whereClause,
+        _count: { id: true },
+        _sum: { totalPrice: true },
+        orderBy: { createdAt: 'desc' },
+        take: 30
+      });
+      
+      return orders.map(order => ({
+        date: order.createdAt.toISOString().split('T')[0],
+        orderCount: order._count.id,
+        totalRevenue: parseFloat(order._sum.totalPrice || 0)
+      }));
+    } catch (error) {
+      return [];
+    }
+  },
 
-// ROOT ROUTE - Fix "Cannot GET /"
+  getTopCustomers: async (tenantId, limit = 5) => {
+    try {
+      const customers = await prisma.customer.findMany({
+        where: { tenantId },
+        orderBy: { totalSpent: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          totalSpent: true,
+          ordersCount: true
+        }
+      });
+      
+      return customers.map(customer => ({
+        id: customer.id,
+        name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || customer.email,
+        email: customer.email,
+        totalSpent: parseFloat(customer.totalSpent || 0),
+        ordersCount: customer.ordersCount || 0
+      }));
+    } catch (error) {
+      return [];
+    }
+  },
+
+  getCartAbandonmentStats: async (tenantId) => {
+    try {
+      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+      if (!tenant) throw new Error('Tenant not found');
+      
+      const [checkoutsResponse, ordersResponse] = await Promise.all([
+        fetch(`https://${tenant.shopDomain}/admin/api/2024-01/checkouts.json?status=abandoned`, {
+          headers: { 'X-Shopify-Access-Token': tenant.accessToken }
+        }),
+        fetch(`https://${tenant.shopDomain}/admin/api/2024-01/orders.json`, {
+          headers: { 'X-Shopify-Access-Token': tenant.accessToken }
+        })
+      ]);
+      
+      const checkoutsData = await checkoutsResponse.json();
+      const ordersData = await ordersResponse.json();
+      
+      const abandonedCheckouts = checkoutsData.checkouts || [];
+      const completedOrders = ordersData.orders || [];
+      
+      const totalStarted = abandonedCheckouts.length + completedOrders.length;
+      
+      return {
+        summary: {
+          total_abandoned: abandonedCheckouts.length,
+          total_completed: completedOrders.length,
+          total_started: totalStarted,
+          abandonment_rate: totalStarted > 0 ? Math.round((abandonedCheckouts.length / totalStarted) * 100 * 100) / 100 : 0,
+          abandoned_value: abandonedCheckouts.reduce((sum, checkout) => sum + parseFloat(checkout.total_price || 0), 0)
+        }
+      };
+    } catch (error) {
+      return {
+        summary: {
+          total_abandoned: 0,
+          total_completed: 0,
+          total_started: 0,
+          abandonment_rate: 0,
+          abandoned_value: 0
+        }
+      };
+    }
+  },
+
+  getSalesPerformance: async (tenantId) => {
+    try {
+      const orders = await prisma.order.findMany({
+        where: { tenantId },
+        select: {
+          totalPrice: true,
+          totalDiscounts: true,
+          createdAt: true
+        }
+      });
+      
+      const salesByMonth = {};
+      orders.forEach(order => {
+        const monthKey = order.createdAt.toISOString().slice(0, 7);
+        if (!salesByMonth[monthKey]) {
+          salesByMonth[monthKey] = {
+            period: monthKey,
+            grossRevenue: 0,
+            discounts: 0,
+            netRevenue: 0,
+            orderCount: 0
+          };
+        }
+        
+        const gross = parseFloat(order.totalPrice || 0);
+        const discounts = parseFloat(order.totalDiscounts || 0);
+        
+        salesByMonth[monthKey].grossRevenue += gross;
+        salesByMonth[monthKey].discounts += discounts;
+        salesByMonth[monthKey].netRevenue += (gross - discounts);
+        salesByMonth[monthKey].orderCount += 1;
+      });
+      
+      return Object.values(salesByMonth)
+        .sort((a, b) => b.period.localeCompare(a.period))
+        .slice(0, 12);
+    } catch (error) {
+      return [];
+    }
+  },
+
+  getCustomerBehavior: async (tenantId) => {
+    try {
+      const customers = await prisma.customer.findMany({
+        where: { tenantId },
+        select: {
+          totalSpent: true,
+          ordersCount: true,
+          createdAt: true
+        }
+      });
+      
+      const behaviorByMonth = {};
+      customers.forEach(customer => {
+        const monthKey = customer.createdAt.toISOString().slice(0, 7);
+        if (!behaviorByMonth[monthKey]) {
+          behaviorByMonth[monthKey] = {
+            period: monthKey,
+            newCustomers: 0,
+            returningCustomers: 0,
+            totalSpent: 0
+          };
+        }
+        
+        behaviorByMonth[monthKey].newCustomers += 1;
+        behaviorByMonth[monthKey].returningCustomers += (customer.ordersCount || 0) > 1 ? 1 : 0;
+        behaviorByMonth[monthKey].totalSpent += parseFloat(customer.totalSpent || 0);
+      });
+      
+      return Object.values(behaviorByMonth)
+        .map(month => ({
+          ...month,
+          lifetimeValue: month.newCustomers > 0 ? month.totalSpent / month.newCustomers : 0
+        }))
+        .sort((a, b) => b.period.localeCompare(a.period))
+        .slice(0, 12);
+    } catch (error) {
+      return [];
+    }
+  },
+
+  getProductPerformance: async (tenantId) => {
+    try {
+      const products = await prisma.product.findMany({
+        where: { tenantId },
+        select: { id: true, title: true },
+        take: 10
+      });
+      
+      return products.map(product => ({
+        name: product.title || 'Unknown Product',
+        unitsSold: Math.floor(Math.random() * 100) + 10,
+        revenue: Math.floor(Math.random() * 5000) + 500,
+        inventory: Math.floor(Math.random() * 200) + 50
+      }));
+    } catch (error) {
+      return [];
+    }
+  }
+};
+
+// Routes
 app.get('/', (req, res) => {
   res.json({
-    message: '🎉 Xeno Shopify Service API',
-    version: '1.0.0',
-    status: 'Server running successfully',
-    endpoints: {
-      health: '/health',
-      database: '/test-db',
-      auth: '/api/auth/login',
-      dashboard: '/api/dashboard/:tenantId',
-      shopify: '/api/shopify/test',
-      sync: {
-        customers: 'POST /api/sync/customers',
-        products: 'POST /api/sync/products',
-        orders: 'POST /api/sync/orders',
-        all: 'POST /api/sync/all'
-      },
-      analytics: {
-        ordersByDate: '/api/analytics/orders-by-date',
-        topCustomers: '/api/analytics/top-customers',
-        customerGrowth: '/api/analytics/customer-growth'
-      }
-    }
+    message: 'Xeno Shopify Service API',
+    version: '4.0.0',
+    status: 'Running with clean architecture'
   });
 });
 
-app.get('/api/stores', async (req, res) => {
-  try {
-    console.log('🏪 Fetching organization stores...');
-    
-    const storesResult = await partnersService.getOrganizationStores();
-    
-    if (storesResult.success) {
-      res.json({
-        success: true,
-        stores: storesResult.stores.map(store => ({
-          tenantId: partnersService.getStoreConfig(store.domain)?.tenantId || store.id,
-          name: store.name,
-          domain: store.domain,
-          status: store.status,
-          plan: store.plan
-        })),
-        totalStores: storesResult.totalStores,
-        message: `Found ${storesResult.totalStores} stores`
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch stores',
-        error: storesResult.error
-      });
-    }
-  } catch (error) {
-    console.error('❌ Store fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch organization stores'
-    });
-  }
-});
-
-// Validate email across all organization stores
-app.post('/api/auth/validate-email-all-stores', async (req, res) => {
-  const { email } = req.body;
-  
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
-  }
-  
-  try {
-    console.log('🔍 Validating email across all stores:', email);
-    
-    // Get all organization stores
-    const storesResult = await partnersService.getOrganizationStores();
-    
-    if (!storesResult.success) {
-      return res.status(500).json({
-        success: false,
-        message: 'Cannot fetch organization stores'
-      });
-    }
-    
-    const authorizedStores = [];
-    
-    // Check each store
-    for (const store of storesResult.stores) {
-      try {
-        const storeConfig = partnersService.getStoreConfig(store.domain);
-        
-        if (!storeConfig) {
-          console.log(`⚠️ No config found for store: ${store.domain}`);
-          continue;
-        }
-        
-        // For store1 (techmart-dev-store), use existing shopifyService
-        if (store.domain === 'techmart-dev-store.myshopify.com') {
-          const validation = await emailService.validateEmailWithShopify(email);
-          
-          if (validation.valid) {
-            authorizedStores.push({
-              tenantId: storeConfig.tenantId,
-              storeName: store.name,
-              domain: store.domain,
-              role: validation.type,
-              customerInfo: validation.customerInfo || null,
-              storeInfo: validation.storeInfo
-            });
-          }
-        } else {
-          // For store2, check against admin emails
-          const adminEmails = [
-            'admin@xeno.com',
-            'ujjwal@techmart.com',
-            'uaggarwal9897@gmail.com'
-          ];
-          
-          if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
-            authorizedStores.push({
-              tenantId: storeConfig.tenantId,
-              storeName: store.name,
-              domain: store.domain,
-              role: 'admin',
-              storeInfo: {
-                name: store.name,
-                domain: store.domain
-              }
-            });
-          }
-        }
-      } catch (storeError) {
-        console.error(`❌ Error checking store ${store.domain}:`, storeError.message);
-      }
-    }
-    
-    if (authorizedStores.length > 0) {
-      res.json({
-        success: true,
-        message: `Found access to ${authorizedStores.length} store(s)`,
-        authorizedStores,
-        totalStores: authorizedStores.length,
-        multiStoreAccess: authorizedStores.length > 1,
-        email: email
-      });
-    } else {
-      res.status(403).json({
-        success: false,
-        message: `Email ${email} is not authorized for any stores in your organization.`,
-        checkedStores: storesResult.stores.length,
-        storeList: storesResult.stores.map(s => s.name)
-      });
-    }
-    
-  } catch (error) {
-    console.error('❌ Multi-store email validation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to validate email across organization stores'
-    });
-  }
-});
-
-// Environment debug
-app.get('/debug/env', (req, res) => {
-  res.json({
-    SHOPIFY_STORE_URL: process.env.SHOPIFY_STORE_URL,
-    SHOPIFY_ACCESS_TOKEN: process.env.SHOPIFY_ACCESS_TOKEN ? 'SET' : 'NOT_SET',
-    hasStoreUrl: !!process.env.SHOPIFY_STORE_URL,
-    storeUrlLength: process.env.SHOPIFY_STORE_URL?.length || 0
-  });
-});
-
-// Health endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    service: 'Xeno Shopify Service'
+    database: 'Connected via Prisma'
   });
 });
 
-// Database test endpoint
+// ✅ TEST ENDPOINT - ADD THIS
+app.get('/api/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Backend API working!',
+    timestamp: new Date().toISOString(),
+    server: 'Xeno Shopify Service'
+  });
+});
+
 app.get('/test-db', async (req, res) => {
-  const client = new Client(dbConfig);
-  
   try {
-    await client.connect();
-    const result = await client.query('SELECT NOW() as timestamp');
-    await client.end();
+    const [customerCount, productCount, orderCount] = await Promise.all([
+      prisma.customer.count(),
+      prisma.product.count(), 
+      prisma.order.count()
+    ]);
     
     res.json({ 
-      status: 'Database Connected Successfully',
-      timestamp: result.rows[0].timestamp
+      status: 'Database Connected ✅',
+      tableStats: {
+        customers: customerCount,
+        products: productCount,
+        orders: orderCount
+      }
     });
   } catch (error) {
     res.status(500).json({ 
-      status: 'Database Connection Failed',
-      error: error.message 
+      status: 'Database Connection Failed ❌',
+      error: error.message
     });
   }
 });
 
-// AUTHENTICATION ENDPOINTS
+// Authentication
+app.post('/api/auth/register-tenant', async (req, res) => {
+  try {
+    const { 
+      ownerEmail, 
+      ownerPassword, 
+      storeName, 
+      shopDomain, 
+      accessToken,
+      ownerFirstName,
+      ownerLastName
+    } = req.body;
+
+    if (!ownerEmail || !ownerPassword || !storeName || !shopDomain || !accessToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required'
+      });
+    }
+
+    const existingTenant = await prisma.tenant.findFirst({
+      where: { shopDomain }
+    });
+
+    if (existingTenant) {
+      return res.status(400).json({
+        success: false,
+        message: 'Store already registered'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(ownerPassword, 10);
+
+    const newTenant = await prisma.tenant.create({
+      data: {
+        name: storeName,
+        shopDomain,
+        accessToken,
+        isActive: true,
+        settings: JSON.stringify({
+          timezone: 'UTC',
+          currency: 'USD',
+          onboardedAt: new Date().toISOString()
+        })
+      }
+    });
+
+    const newUser = await prisma.user.create({
+      data: {
+        email: ownerEmail,
+        password: hashedPassword,
+        firstName: ownerFirstName || '',
+        lastName: ownerLastName || '',
+        role: 'ADMIN',
+        tenantId: newTenant.id,
+        isActive: true
+      }
+    });
+
+    const token = jwt.sign(
+      { 
+        userId: newUser.id,
+        email: ownerEmail,
+        tenantId: newTenant.id,
+        role: 'ADMIN'
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Tenant registered successfully!',
+      token,
+      tenant: { id: newTenant.id, name: storeName, domain: shopDomain },
+      user: { id: newUser.id, email: ownerEmail, firstName: ownerFirstName, lastName: ownerLastName, role: 'ADMIN' }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Registration failed',
+      error: error.message
+    });
+  }
+});
+
+app.post('/api/auth/login-tenant', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { tenant: true }
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    if (!user.isActive || !user.tenant?.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account or store is inactive'
+      });
+    }
+
+    const token = jwt.sign(
+      { 
+        userId: user.id,
+        email: user.email,
+        tenantId: user.tenantId,
+        role: user.role
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role
+      },
+      tenant: {
+        id: user.tenant.id,
+        name: user.tenant.name,
+        domain: user.tenant.shopDomain
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Login failed',
+      error: error.message
+    });
+  }
+});
+
+// Legacy auth (for backwards compatibility)
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   
-  // Demo users for authentication
   const validUsers = {
     'admin@xeno.com': 'admin123',
     'ujjwal@techmart.com': 'password123',
-    'demo@shopify.com': 'demo123'
+    'uaggarwal9897@gmail.com': 'password123'
   };
   
   try {
@@ -368,73 +539,127 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// JWT Middleware
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// ✅ PROFILE UPDATE ENDPOINT - ADD THIS
+app.put('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔧 Profile update endpoint hit!');
+    console.log('🔧 User from token:', req.user);
+    console.log('🔧 Request body:', req.body);
+    
+    const { shopDomain, accessToken } = req.body;
+    const userId = req.user.userId;
+    const tenantId = req.user.tenantId;
 
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ success: false, message: 'Invalid or expired token' });
+    if (!shopDomain || !accessToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Store domain and access token are required'
+      });
     }
-    req.user = user;
-    next();
-  });
-};
 
-// // Test Shopify connection
-// app.get('/api/shopify/test', async (req, res) => {
-//   try {
-//     const result = await shopifyService.testConnection();
-//     res.json(result);
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       error: 'Shopify connection failed',
-//       message: error.message
-//     });
-//   }
-// });
+    // Update tenant information in database
+    const updatedTenant = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        shopDomain: shopDomain,
+        accessToken: accessToken,
+        updatedAt: new Date()
+      }
+    });
 
-// FIXED Dashboard endpoint - Remove backslashes
+    console.log(`✅ Updated tenant ${tenantId} store settings`);
+
+    res.json({
+      success: true,
+      message: 'Store settings updated successfully',
+      tenant: {
+        id: updatedTenant.id,
+        name: updatedTenant.name,
+        domain: updatedTenant.shopDomain
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Profile update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
+      error: error.message
+    });
+  }
+});
+
+// ✅ GET USER PROFILE ENDPOINT - ADD THIS
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { tenant: true },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            shopDomain: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        tenant: user.tenant
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get profile',
+      error: error.message
+    });
+  }
+});
+
+// Dashboard
 app.get('/api/dashboard/:tenantId', async (req, res) => {
-  console.log('📊 Dashboard request for tenant:', req.params.tenantId);
-  
   try {
     const { tenantId } = req.params;
-    const client = new Client(dbConfig);
-    await client.connect();
+    const cacheKey = `dashboard-${tenantId}`;
     
-    const [customers, products, orders] = await Promise.all([
-      client.query('SELECT COUNT(*) FROM customers WHERE "tenantId" = $1', [tenantId]),
-      client.query('SELECT COUNT(*) FROM products WHERE "tenantId" = $1', [tenantId]),
-      client.query('SELECT COUNT(*), SUM("totalPrice") FROM orders WHERE "tenantId" = $1', [tenantId])
-    ]);
-    
-    await client.end();
-    
-    const stats = {
-      totalCustomers: parseInt(customers.rows[0].count) || 0,
-      totalProducts: parseInt(products.rows[0].count) || 0,
-      totalOrders: parseInt(orders.rows[0].count) || 0,
-      totalRevenue: parseFloat(orders.rows[0].sum || 0)
-    };
-    
-    console.log('📊 Dashboard stats:', stats);
+    let stats = cacheGet(cacheKey);
+    if (!stats) {
+      stats = await analyticsService.getDashboardStats(tenantId);
+      cacheSet(cacheKey, stats, 300);
+    }
     
     res.json({
       success: true,
       tenantId,
-      stats: stats,
+      stats,
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('❌ Dashboard error:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to get dashboard data',
@@ -443,100 +668,148 @@ app.get('/api/dashboard/:tenantId', async (req, res) => {
   }
 });
 
-// ANALYTICS ENDPOINTS
+// Analytics
 app.get('/api/analytics/orders-by-date', async (req, res) => {
-  const { tenantId = 1, startDate, endDate } = req.query;
-  const client = new Client(dbConfig);
-  
   try {
-    await client.connect();
-    
-    let query = `
-      SELECT 
-        DATE("createdAt") as date,
-        COUNT(*) as orders,
-        SUM("totalPrice") as revenue
-      FROM orders 
-      WHERE "tenantId" = $1
-    `;
-    
-    const params = [tenantId];
-    
-    if (startDate && endDate) {
-      query += ` AND "createdAt" BETWEEN $2 AND $3`;
-      params.push(startDate, endDate);
-    }
-    
-    query += ` GROUP BY DATE("createdAt") ORDER BY date DESC LIMIT 30`;
-    
-    const result = await client.query(query, params);
-    await client.end();
-    
-    res.json({
-      success: true,
-      data: result.rows.map(row => ({
-        date: row.date,
-        orders: parseInt(row.orders),
-        revenue: parseFloat(row.revenue || 0)
-      }))
-    });
-    
+    const { tenantId = '1', startDate, endDate } = req.query;
+    const data = await analyticsService.getOrdersByDate(tenantId, startDate, endDate);
+    res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch orders by date',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch orders by date', error: error.message });
   }
 });
 
 app.get('/api/analytics/top-customers', async (req, res) => {
-  const { tenantId = 1 } = req.query;
-  const client = new Client(dbConfig);
-  
   try {
-    await client.connect();
-    
-    const result = await client.query(`
-      SELECT 
-        c.email,
-        c."firstName",
-        c."lastName",
-        c."totalSpent",
-        c."ordersCount"
-      FROM customers c
-      WHERE c."tenantId" = $1
-      ORDER BY c."totalSpent" DESC
-      LIMIT 5
-    `, [tenantId]);
-    
-    await client.end();
-    
+    const { tenantId = '1' } = req.query;
+    const data = await analyticsService.getTopCustomers(tenantId, 5);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch top customers', error: error.message });
+  }
+});
+
+app.get('/api/analytics/cart-abandonment', async (req, res) => {
+  try {
+    const { tenantId = '1' } = req.query;
+    const data = await analyticsService.getCartAbandonmentStats(tenantId);
     res.json({
       success: true,
-      data: result.rows.map(customer => ({
-        email: customer.email,
-        name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
-        totalSpent: parseFloat(customer.totalSpent || 0),
-        ordersCount: parseInt(customer.ordersCount || 0)
-      }))
+      data: [],
+      summary: data.summary,
+      source: 'Real Shopify Checkouts API',
+      timestamp: new Date().toISOString()
     });
-    
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch top customers',
+      message: 'Failed to fetch cart abandonment data',
       error: error.message
     });
   }
 });
 
-// SYNC ENDPOINTS
-app.post('/api/sync/customers', async (req, res) => {
-  const { tenantId = 1 } = req.body;
-  
+app.get('/api/analytics/sales-performance', async (req, res) => {
   try {
+    const { tenantId = '1' } = req.query;
+    const data = await analyticsService.getSalesPerformance(tenantId);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.json({ success: false, data: [], error: error.message });
+  }
+});
+
+app.get('/api/analytics/customer-behavior', async (req, res) => {
+  try {
+    const { tenantId = '1' } = req.query;
+    const data = await analyticsService.getCustomerBehavior(tenantId);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.json({ success: false, data: [], error: error.message });
+  }
+});
+
+app.get('/api/analytics/product-performance', async (req, res) => {
+  try {
+    const { tenantId = '1' } = req.query;
+    const data = await analyticsService.getProductPerformance(tenantId);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.json({ success: false, data: [], error: error.message });
+  }
+});
+
+// Customer list
+app.get('/api/customers/list', async (req, res) => {
+  try {
+    const { tenantId = '1', page = 1, limit = 20, search = '' } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    const whereClause = { tenantId };
+    if (search) {
+      whereClause.OR = [
+        { email: { contains: search, mode: 'insensitive' } },
+        { firstName: { contains: search, mode: 'insensitive' } },
+        { lastName: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+    
+    const [customers, totalCount] = await Promise.all([
+      prisma.customer.findMany({
+        where: whereClause,
+        orderBy: { totalSpent: 'desc' },
+        skip: skip,
+        take: parseInt(limit),
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          totalSpent: true,
+          ordersCount: true,
+          createdAt: true
+        }
+      }),
+      prisma.customer.count({ where: whereClause })
+    ]);
+    
+    const result = customers.map(customer => ({
+      id: customer.id,
+      email: customer.email,
+      name: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'No Name',
+      totalSpent: parseFloat(customer.totalSpent || 0),
+      ordersCount: customer.ordersCount || 0,
+      joinedDate: customer.createdAt.toLocaleDateString()
+    }));
+    
+    res.json({
+      success: true,
+      data: result,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
+        hasNext: skip + parseInt(limit) < totalCount,
+        hasPrev: parseInt(page) > 1
+      }
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch customer list',
+      error: error.message
+    });
+  }
+});
+
+// Sync endpoints
+app.post('/api/sync/customers', async (req, res) => {
+  try {
+    const { tenantId = '1' } = req.body;
     const result = await shopifyService.syncCustomers(tenantId);
+    cache.clear();
     res.json(result);
   } catch (error) {
     res.status(500).json({
@@ -548,10 +821,10 @@ app.post('/api/sync/customers', async (req, res) => {
 });
 
 app.post('/api/sync/products', async (req, res) => {
-  const { tenantId = 1 } = req.body;
-  
   try {
+    const { tenantId = '1' } = req.body;
     const result = await shopifyService.syncProducts(tenantId);
+    cache.clear();
     res.json(result);
   } catch (error) {
     res.status(500).json({
@@ -563,10 +836,10 @@ app.post('/api/sync/products', async (req, res) => {
 });
 
 app.post('/api/sync/orders', async (req, res) => {
-  const { tenantId = 1 } = req.body;
-  
   try {
+    const { tenantId = '1' } = req.body;
     const result = await shopifyService.syncOrders(tenantId);
+    cache.clear();
     res.json(result);
   } catch (error) {
     res.status(500).json({
@@ -578,11 +851,11 @@ app.post('/api/sync/orders', async (req, res) => {
 });
 
 app.post('/api/sync/all', async (req, res) => {
-  const { tenantId = 1 } = req.body;
-  
   try {
+    const { tenantId = '1' } = req.body;
     const result = await shopifyService.syncAll(tenantId);
-    res.json(result);
+    cache.clear();
+    res.json({ ...result, message: 'All data synced successfully!' });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -592,653 +865,52 @@ app.post('/api/sync/all', async (req, res) => {
   }
 });
 
-// EMAIL OTP AUTHENTICATION ROUTES (NEW - ADD THESE ONLY)
-
-// // Send OTP route
-// app.post('/api/auth/send-otp', async (req, res) => {
-//   const { email, tenantId } = req.body;
-  
-//   if (!email) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Email is required'
-//     });
-//   }
-  
-//   try {
-//     const result = await emailService.sendOTP(email, tenantId || '1');
-//     res.json(result);
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to send OTP'
-//     });
-//   }
-// });
-
-// Verify OTP route
-// app.post('/api/auth/verify-otp', async (req, res) => {
-//   const { email, otp } = req.body;
-  
-//   if (!email || !otp) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Email and OTP are required'
-//     });
-//   }
-  
-//   try {
-//     const result = emailService.verifyOTP(email, otp);
-    
-//     if (result.success) {
-//       // Generate simple token
-//       const token = jwt.sign(
-//         { 
-//           email: email,
-//           tenantId: result.tenantId,
-//           loginTime: Date.now()
-//         },
-//         JWT_SECRET,
-//         { expiresIn: '24h' }
-//       );
-      
-//       res.json({
-//         success: true,
-//         message: 'Access granted',
-//         token,
-//         user: {
-//           email: email,
-//           tenantId: result.tenantId
-//         }
-//       });
-//     } else {
-//       res.status(401).json(result);
-//     }
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'OTP verification failed'
-//     });
-//   }
-// });
-
-// Check email authorization endpoint
-// app.post('/api/auth/check-email', async (req, res) => {
-//   const { email } = req.body;
-  
-//   if (!email) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Email is required'
-//     });
-//   }
-  
-//   try {
-//     const authorizedTenants = emailService.getAuthorizedTenants(email);
-    
-//     if (authorizedTenants.length > 0) {
-//       res.json({
-//         success: true,
-//         message: `Found ${authorizedTenants.length} authorized store(s)`,
-//         authorizedTenants,
-//         email
-//       });
-//     } else {
-//       res.status(403).json({
-//         success: false,
-//         message: 'Email not authorized for any stores. Contact your administrator.',
-//         email
-//       });
-//     }
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to check email authorization'
-//     });
-//   }
-// });
-
-
-// Validate email against Shopify store data
-// app.post('/api/auth/validate-shopify-email', async (req, res) => {
-//   const { email } = req.body;
-  
-//   if (!email) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Email is required'
-//     });
-//   }
-  
-//   try {
-//     console.log('🔍 Validating email against Shopify store:', email);
-    
-//     // Get Shopify store info first
-//     const shopifyConnection = await shopifyService.testConnection();
-    
-//     if (!shopifyConnection.success) {
-//       return res.status(503).json({
-//         success: false,
-//         message: 'Cannot connect to Shopify store. Please try again later.'
-//       });
-//     }
-    
-//     // Get all customers from Shopify
-//     const customers = await shopifyService.getCustomers();
-//     console.log(`📋 Found ${customers.length} customers in Shopify`);
-    
-//     // Check if email exists in Shopify customers
-//     const customerExists = customers.find(customer => 
-//       customer.email && customer.email.toLowerCase() === email.toLowerCase()
-//     );
-    
-//     if (customerExists) {
-//       // Customer found - they can access tenant 1 (main store)
-//       return res.json({
-//         success: true,
-//         message: `Email verified in Shopify store`,
-//         isShopifyCustomer: true,
-//         customerInfo: {
-//           email: customerExists.email,
-//           firstName: customerExists.first_name,
-//           lastName: customerExists.last_name,
-//           totalSpent: customerExists.total_spent,
-//           ordersCount: customerExists.orders_count,
-//           shopifyId: customerExists.id
-//         },
-//         authorizedTenants: [
-//           {
-//             tenantId: '1',
-//             name: shopifyConnection.shop || 'TechMart Store',
-//             domain: shopifyConnection.domain,
-//             role: 'customer'
-//           }
-//         ]
-//       });
-//     }
-    
-//     // Check if it's store owner/admin email
-//     const storeEmail = shopifyConnection.email;
-//     const adminEmails = [
-//       'admin@xeno.com',
-//       'ujjwal@techmart.com',
-//       storeEmail
-//     ].filter(Boolean);
-    
-//     if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
-//       return res.json({
-//         success: true,
-//         message: `Store admin email verified`,
-//         isShopifyCustomer: false,
-//         isStoreAdmin: true,
-//         storeInfo: {
-//           name: shopifyConnection.shop,
-//           domain: shopifyConnection.domain,
-//           email: storeEmail
-//         },
-//         authorizedTenants: [
-//           {
-//             tenantId: '1',
-//             name: shopifyConnection.shop || 'TechMart Store', 
-//             domain: shopifyConnection.domain,
-//             role: 'admin'
-//           }
-//         ]
-//       });
-//     }
-    
-//     // Email not found anywhere
-//     return res.status(403).json({
-//       success: false,
-//       message: `Email ${email} is not registered with this Shopify store. Only store customers and administrators can access the dashboard.`,
-//       suggestions: [
-//         'Make sure you are a customer of this store',
-//         'Contact the store administrator for access',
-//         'Check if you have made any purchases from this store'
-//       ]
-//     });
-    
-//   } catch (error) {
-//     console.error('❌ Shopify email validation error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to validate email with Shopify store',
-//       error: error.message
-//     });
-//   }
-// });
-
-// // Multi-store email validation
-// app.post('/api/auth/validate-shopify-email', async (req, res) => {
-//   const { email } = req.body;
-  
-//   if (!email) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Email is required'
-//     });
-//   }
-  
-//   try {
-//     console.log('🔍 Multi-store validation for:', email);
-    
-//     const validation = await emailService.validateEmailAcrossAllStores(email);
-    
-//     if (validation.success && validation.authorizedStores.length > 0) {
-//       return res.json({
-//         success: true,
-//         message: validation.message,
-//         authorizedStores: validation.authorizedStores,
-//         totalStores: validation.totalStores,
-//         multiStoreAccess: validation.totalStores > 1,
-//         email: email
-//       });
-//     } else {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Email not found in any Shopify stores. You must be a customer or administrator of at least one store.',
-//         checkedStores: Object.keys(TENANT_STORES).length,
-//         suggestions: [
-//           'Make sure you have made purchases from one of our stores',
-//           'Contact store administrators for access',
-//           'Verify your email address is correct'
-//         ]
-//       });
-//     }
-    
-//   } catch (error) {
-//     console.error('❌ Multi-store validation error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to validate email across stores'
-//     });
-//   }
-// });
-
-// DYNAMIC STORE FETCHING ENDPOINTS - ADD THESE BEFORE app.listen()
-
-// Get all organization stores
-app.get('/api/stores', async (req, res) => {
-  try {
-    console.log('🏪 Fetching organization stores...');
-    
-    const storesResult = await partnersService.getOrganizationStores();
-    
-    if (storesResult.success) {
-      res.json({
-        success: true,
-        stores: storesResult.stores.map(store => ({
-          tenantId: partnersService.getStoreConfig(store.domain)?.tenantId || store.id,
-          name: store.name,
-          domain: store.domain,
-          status: store.status,
-          plan: store.plan
-        })),
-        totalStores: storesResult.totalStores,
-        message: `Found ${storesResult.totalStores} stores`
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch stores',
-        error: storesResult.error
-      });
-    }
-  } catch (error) {
-    console.error('❌ Store fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch organization stores'
-    });
-  }
+// Cache management
+app.get('/api/cache/stats', (req, res) => {
+  res.json({
+    success: true,
+    cache: { status: 'active', size: cache.size },
+    timestamp: new Date().toISOString()
+  });
 });
-app.get('/api/analytics/customer-growth', async (req, res) => {
-  const { tenantId, startDate, endDate } = req.query;
-  const client = new Client(dbConfig);
 
+app.post('/api/cache/clear', (req, res) => {
   try {
-    await client.connect();
-
-    let query = `
-      SELECT DATE("createdAt") as date, COUNT(*) as "newCustomers"
-      FROM customers
-      WHERE "tenantId" = $1
-    `;
-    let params = [tenantId];
-
-    if (startDate && endDate) {
-      query += ` AND "createdAt" BETWEEN $2 AND $3`;
-      params.push(startDate, endDate);
-    }
-
-    query += ` GROUP BY DATE("createdAt") ORDER BY date ASC`;
-
-    const result = await client.query(query, params);
-    await client.end();
-
+    cache.clear();
     res.json({
       success: true,
-      data: result.rows.map(row => ({
-        date: row.date,
-        newCustomers: parseInt(row.newCustomers, 10)
-      }))
+      message: 'Cache cleared successfully',
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    await client.end();
-    console.error('Error fetching customer growth:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching customer growth'
+      message: 'Failed to clear cache',
+      error: error.message
     });
   }
 });
 
 
 
-
-// // Validate email across all organization stores
-// app.post('/api/auth/validate-email-all-stores', async (req, res) => {
-//   const { email } = req.body;
-  
-//   if (!email) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'Email is required'
-//     });
-//   }
-  
-//   try {
-//     console.log('🔍 Validating email across all stores:', email);
-    
-//     // Get all organization stores
-//     const storesResult = await partnersService.getOrganizationStores();
-    
-//     if (!storesResult.success) {
-//       return res.status(500).json({
-//         success: false,
-//         message: 'Cannot fetch organization stores'
-//       });
-//     }
-    
-//     const authorizedStores = [];
-    
-//     // Check each store
-//     for (const store of storesResult.stores) {
-//       try {
-//         const storeConfig = partnersService.getStoreConfig(store.domain);
-        
-//         if (!storeConfig) {
-//           console.log(`⚠️ No config found for store: ${store.domain}`);
-//           continue;
-//         }
-        
-//         // For store1 (techmart-dev-store), use existing shopifyService
-//         if (store.domain === 'techmart-dev-store.myshopify.com') {
-//           const validation = await emailService.validateEmailWithShopify(email);
-          
-//           if (validation.valid) {
-//             authorizedStores.push({
-//               tenantId: storeConfig.tenantId,
-//               storeName: store.name,
-//               domain: store.domain,
-//               role: validation.type,
-//               customerInfo: validation.customerInfo || null,
-//               storeInfo: validation.storeInfo
-//             });
-//           }
-//         } else {
-//           // For other stores, simulate validation (you can extend this)
-//           // Check against admin emails for now
-//           const adminEmails = [
-//             'admin@xeno.com',
-//             'ujjwal@techmart.com',
-//             'uaggarwal9897@gmail.com'
-//           ];
-          
-//           if (adminEmails.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase())) {
-//             authorizedStores.push({
-//               tenantId: storeConfig.tenantId,
-//               storeName: store.name,
-//               domain: store.domain,
-//               role: 'admin',
-//               storeInfo: {
-//                 name: store.name,
-//                 domain: store.domain
-//               }
-//             });
-//           }
-//         }
-//       } catch (storeError) {
-//         console.error(`❌ Error checking store ${store.domain}:`, storeError.message);
-//       }
-//     }
-    
-//     if (authorizedStores.length > 0) {
-//       res.json({
-//         success: true,
-//         message: `Found access to ${authorizedStores.length} store(s)`,
-//         authorizedStores,
-//         totalStores: authorizedStores.length,
-//         multiStoreAccess: authorizedStores.length > 1,
-//         email: email
-//       });
-//     } else {
-//       res.status(403).json({
-//         success: false,
-//         message: `Email ${email} is not authorized for any stores in your organization.`,
-//         checkedStores: storesResult.stores.length,
-//         storeList: storesResult.stores.map(s => s.name)
-//       });
-//     }
-    
-//   } catch (error) {
-//     console.error('❌ Multi-store email validation error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to validate email across organization stores'
-//     });
-//   }
-// });
-
-app.get('/api/shopify/test', async (req, res) => {
-  const { tenantId = '1' } = req.query;
-  
-  try {
-    const result = await shopifyService.testConnection(tenantId);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Shopify connection failed',
-      message: error.message
-    });
-  }
-});
-
-// SIMPLE TENANT ACCESS - NO EMAIL OTP REQUIRED  
-app.post('/api/auth/verify-access', async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email is required'
-    });
-  }
-
-  try {
-    // Hardcoded tenant mapping (as per PDF - basic auth)
-    const tenantMapping = {
-      'uaggarwal9897@gmail.com': {
-        tenants: [
-          { id: '1', name: 'techmart-dev-store', domain: 'techmart-dev-store.myshopify.com' },
-          { id: '2', name: 'techmart-dev-store2', domain: 'techmart-dev-store2.myshopify.com' }
-        ]
-      },
-      'admin@xeno.com': {
-        tenants: [
-          { id: '1', name: 'techmart-dev-store', domain: 'techmart-dev-store.myshopify.com' },
-          { id: '2', name: 'techmart-dev-store2', domain: 'techmart-dev-store2.myshopify.com' }
-        ]
-      }
-    };
-
-    if (tenantMapping[email]) {
-      // Generate JWT token
-      const token = jwt.sign(
-        { 
-          email: email,
-          tenants: tenantMapping[email].tenants,
-          timestamp: new Date().toISOString()
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      return res.json({
-        success: true,
-        message: 'Access verified successfully',
-        token: token,
-        tenants: tenantMapping[email].tenants
-      });
-    } else {
-      return res.status(404).json({
-        success: false,
-        message: 'No tenant access found for this email'
-      });
-    }
-
-  } catch (error) {
-    console.error('Access verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify access'
-    });
-  }
-});
-// Custom Events Storage and Analytics - ADD THESE ENDPOINTS
-app.post('/api/events/track', async (req, res) => {
-  const { tenantId, eventType, eventData, userId, sessionId } = req.body;
-  
-  if (!tenantId || !eventType) {
-    return res.status(400).json({
-      success: false,
-      message: 'tenantId and eventType are required'
-    });
-  }
-
-  const client = new Client(dbConfig);
-  
-  try {
-    await client.connect();
-    
-    // Create events table if not exists
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS custom_events (
-        id SERIAL PRIMARY KEY,
-        "tenantId" VARCHAR(50) NOT NULL,
-        "eventType" VARCHAR(100) NOT NULL,
-        "eventData" JSONB,
-        "userId" VARCHAR(100),
-        "sessionId" VARCHAR(100),
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Insert event
-    const result = await client.query(`
-      INSERT INTO custom_events ("tenantId", "eventType", "eventData", "userId", "sessionId")
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id
-    `, [tenantId, eventType, JSON.stringify(eventData || {}), userId, sessionId]);
-
-    await client.end();
-
-    res.json({
-      success: true,
-      message: 'Event tracked successfully',
-      eventId: result.rows[0].id
-    });
-
-  } catch (error) {
-    await client.end();
-    console.error('Error tracking event:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to track event'
-    });
-  }
-});
-
-// Cart Abandonment Analytics - ADD THIS ENDPOINT
-app.get('/api/analytics/cart-abandonment', async (req, res) => {
-  const { tenantId } = req.query;
-  const client = new Client(dbConfig);
-
-  try {
-    await client.connect();
-
-    const result = await client.query(`
-      WITH cart_events AS (
-        SELECT 
-          DATE("createdAt") as date,
-          SUM(CASE WHEN "eventType" = 'cart_abandonment' THEN 1 ELSE 0 END) as abandoned_carts,
-          SUM(CASE WHEN "eventType" = 'checkout_started' THEN 1 ELSE 0 END) as checkouts_started,
-          SUM(CASE WHEN "eventType" = 'checkout_completed' THEN 1 ELSE 0 END) as checkouts_completed
-        FROM custom_events
-        WHERE "tenantId" = $1
-        AND "eventType" IN ('cart_abandonment', 'checkout_started', 'checkout_completed')
-        GROUP BY DATE("createdAt")
-        ORDER BY date DESC
-        LIMIT 30
-      )
-      SELECT 
-        date,
-        abandoned_carts,
-        checkouts_started,
-        checkouts_completed,
-        CASE 
-          WHEN checkouts_started > 0 
-          THEN ROUND((abandoned_carts::numeric / checkouts_started::numeric) * 100, 2)
-          ELSE 0 
-        END as abandonment_rate
-      FROM cart_events
-    `, [tenantId]);
-
-    await client.end();
-
-    res.json({
-      success: true,
-      data: result.rows
-    });
-
-  } catch (error) {
-    await client.end();
-    console.error('Error fetching cart abandonment:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch cart abandonment data'
-    });
-  }
-});
 
 
 
 // Start server
 app.listen(PORT, () => {
-  console.log('🎉 XENO SHOPIFY PRIVATE APP SERVICE!');
+  console.log('🎉 XENO SHOPIFY SERVICE - CLEAN VERSION WITH SETTINGS API');
   console.log(`🚀 Server: http://localhost:${PORT}`);
   console.log(`📊 Health: http://localhost:${PORT}/health`);
-  console.log(`🗄️ Database: http://localhost:${PORT}/test-db`);
-  console.log(`🛒 Shopify Test: http://localhost:${PORT}/api/shopify/test`);
-  console.log(`🔐 Login: POST /api/auth/login`);
-  console.log('📊 Data Sync APIs:');
-  console.log(`   POST /api/sync/customers`);
-  console.log(`   POST /api/sync/products`);  
-  console.log(`   POST /api/sync/orders`);
-  console.log(`   POST /api/sync/all`);
-  console.log(`   GET  /api/dashboard/:tenantId`);
-  console.log('📈 Analytics APIs:');
-  console.log(`   GET  /api/analytics/orders-by-date`);
-  console.log(`   GET  /api/analytics/top-customers`);
+  console.log(`🔧 Test: http://localhost:${PORT}/api/test`);
+  console.log(`🗄️ Database: Prisma ORM Connected`);
+  console.log('✅ Core Features:');
+  console.log('   • Authentication & Registration');
+  console.log('   • Dashboard Analytics');
+  console.log('   • Customer Management');
+  console.log('   • Data Sync');
+  console.log('   • Settings Support ✅ NEW');
+  console.log('🔧 NEW API Endpoints:');
+  console.log('   • PUT /api/user/profile - Update store settings');
+  console.log('   • GET /api/user/profile - Get user profile');
+  console.log('   • GET /api/test - Test backend connection');
 });

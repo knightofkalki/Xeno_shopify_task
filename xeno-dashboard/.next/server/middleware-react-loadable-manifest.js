@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{\"components/CustomEventsChart.jsx -> ../utils/eventTracker\":{\"id\":\"components/CustomEventsChart.jsx -> ../utils/eventTracker\",\"files\":[\"static/chunks/_app-pages-browser_utils_eventTracker_js.js\"]}}"
+self.__REACT_LOADABLE_MANIFEST="{}"

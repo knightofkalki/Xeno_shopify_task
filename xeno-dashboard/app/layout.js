@@ -1,6 +1,9 @@
-'use client';
-import { AuthProvider } from './context/AuthContext';
-import './global.css';
+import { AuthProvider } from './context/AuthContext'
+
+export const metadata = {
+  title: 'Xeno Analytics',
+  description: 'Professional Dashboard',
+}
 
 export default function RootLayout({ children }) {
   return (
@@ -11,5 +14,7 @@ export default function RootLayout({ children }) {
         </AuthProvider>
       </body>
     </html>
-  );
+  )
 }
+
+

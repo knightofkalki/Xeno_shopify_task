@@ -1,323 +1,281 @@
 const axios = require('axios');
-const { Client } = require('pg');
+const { prisma } = require('../config/database');
+const TenantService = require('./tenantService');
 
-// Database config
-// Database config - HARDCODED FIX
-const dbConfig = {
-  host: 'localhost',
-  port: 5432,
-  database: 'xeno_db',
-  user: 'postgres',
-  password: 'Ujjwal,agg1499@'  // Direct string without env
-};
-
-
+// Why: Modern Shopify integration with dynamic multi-tenant support
+// What: Auto-tenant creation + Shopify sync for unlimited stores
 class ShopifyService {
-  
-  // Get store config by tenantId
-  getStoreConfig(tenantId) {
-  const storeConfigs = {
-    '1': {
-      storeUrl: 'techmart-dev-store.myshopify.com',
-      accessToken: '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',
-      storeName: 'techmart-dev-store'
-    },
-    '2': {
-      storeUrl: 'techmart-dev-store2.myshopify.com',
-      accessToken: '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',
-      storeName: 'techmart-dev-store2'
+  // Get store config with dynamic tenant creation
+  async getStoreConfig(tenantId) {
+    try {
+      // Ensure tenant exists (create if needed)
+      const tenant = await TenantService.ensureTenantExists(tenantId);
+      
+      return {
+        storeUrl: tenant.shopDomain,
+        accessToken: tenant.accessToken,
+        storeName: tenant.name
+      };
+    } catch (error) {
+      console.error(`❌ Tenant ${tenantId} not found, falling back to env config`);
+      
+      // Fallback to environment variables for initial setup
+      const storeConfigs = {
+        '1': {
+          storeUrl: process.env.SHOPIFY_STORE_URL_1,
+          accessToken: process.env.SHOPIFY_ACCESS_TOKEN_1,
+          storeName: process.env.TENANT_1_NAME || 'techmart-dev-store'
+        },
+        '2': {
+          storeUrl: process.env.SHOPIFY_STORE_URL_2,
+          accessToken: process.env.SHOPIFY_ACCESS_TOKEN_2,
+          storeName: process.env.TENANT_2_NAME || 'techmart-dev-store2'
+        }
+      };
+      return storeConfigs[tenantId] || storeConfigs['1'];
     }
-  };
-  
-  console.log(`🔍 Store config for tenant ${tenantId}:`, storeConfigs[tenantId]);
-  return storeConfigs[tenantId];
-}
-
-
-  // Create axios instance for specific tenant
-  createAxiosInstance(tenantId) {
-  const config = this.getStoreConfig(tenantId);
-  
-  if (!config) {
-    throw new Error(`No store configuration found for tenant ${tenantId}`);
   }
 
-  console.log(`🚀 Creating axios for tenant ${tenantId}:`, {
-    storeUrl: config.storeUrl,
-    hasAccessToken: !!config.accessToken
-  });
-
-  return axios.create({
-    baseURL: `https://${config.storeUrl}/admin/api/2024-01/`,
-    headers: {
-      'X-Shopify-Access-Token': config.accessToken,
-      'Content-Type': 'application/json'
-    },
-    timeout: 10000
-  });
-}
-
-
-  // Test connection for specific tenant
+  // Test Shopify connection with tenant validation
   async testConnection(tenantId = '1') {
     try {
-      const config = this.getStoreConfig(tenantId);
-      const shopify = this.createAxiosInstance(tenantId);
-      
-      const response = await shopify.get('shop.json');
-      
+      const config = await this.getStoreConfig(tenantId);
+      const response = await axios.get(`https://${config.storeUrl}/admin/api/2023-07/shop.json`, {
+        headers: { 'X-Shopify-Access-Token': config.accessToken }
+      });
+
       return {
         success: true,
-        message: `Connected to ${config.storeName} successfully`,
         shop: response.data.shop.name,
-        domain: response.data.shop.domain,
-        email: response.data.shop.email,
-        tenantId: tenantId
+        domain: response.data.shop.myshopify_domain,
+        email: response.data.shop.email
       };
     } catch (error) {
       return {
         success: false,
-        message: `Failed to connect to store (tenant ${tenantId})`,
-        error: error.response?.data || error.message
+        error: error.message
       };
     }
   }
 
-  // Get customers for specific tenant
-  async getCustomers(tenantId = '1', limit = 250) {
+  // Sync customers with dynamic tenant support
+  async syncCustomers(tenantId) {
     try {
-      const shopify = this.createAxiosInstance(tenantId);
-      const response = await shopify.get(`customers.json?limit=${limit}`);
-      return response.data.customers;
-    } catch (error) {
-      console.error(`Error fetching customers for tenant ${tenantId}:`, error.message);
-      throw error;
-    }
-  }
+      const config = await this.getStoreConfig(tenantId);
+      console.log(`🔄 Syncing customers for tenant ${tenantId} (${config.storeName})...`);
 
-  // Get products for specific tenant
-  async getProducts(tenantId = '1', limit = 250) {
-    try {
-      const shopify = this.createAxiosInstance(tenantId);
-      const response = await shopify.get(`products.json?limit=${limit}`);
-      return response.data.products;
-    } catch (error) {
-      console.error(`Error fetching products for tenant ${tenantId}:`, error.message);
-      throw error;
-    }
-  }
+      const response = await axios.get(`https://${config.storeUrl}/admin/api/2023-07/customers.json`, {
+        headers: { 'X-Shopify-Access-Token': config.accessToken }
+      });
 
-  // Get orders for specific tenant
-  async getOrders(tenantId = '1', limit = 250) {
-    try {
-      const shopify = this.createAxiosInstance(tenantId);
-      const response = await shopify.get(`orders.json?limit=${limit}&status=any`);
-      return response.data.orders;
-    } catch (error) {
-      console.error(`Error fetching orders for tenant ${tenantId}:`, error.message);
-      throw error;
-    }
-  }
+      const customers = response.data.customers;
+      let syncCount = 0;
 
-  // Sync customers for specific tenant
-  async syncCustomers(tenantId = '1') {
-    const client = new Client(dbConfig);
-    
-    try {
-      console.log(`🔄 Syncing customers for tenant ${tenantId}...`);
-      const customers = await this.getCustomers(tenantId);
-      
-      await client.connect();
-      
-      let syncedCount = 0;
-      
       for (const customer of customers) {
-        await client.query(`
-          INSERT INTO customers (
-            "shopifyId", "tenantId", email, "firstName", "lastName", 
-            "totalSpent", "ordersCount", "createdAt", "updatedAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          ON CONFLICT ("shopifyId", "tenantId") 
-          DO UPDATE SET
-            email = EXCLUDED.email,
-            "firstName" = EXCLUDED."firstName",
-            "lastName" = EXCLUDED."lastName",
-            "totalSpent" = EXCLUDED."totalSpent",
-            "ordersCount" = EXCLUDED."ordersCount",
-            "updatedAt" = EXCLUDED."updatedAt"
-        `, [
-          customer.id,
-          tenantId,
-          customer.email,
-          customer.first_name,
-          customer.last_name,
-          parseFloat(customer.total_spent || 0),
-          parseInt(customer.orders_count || 0),
-          new Date(customer.created_at),
-          new Date(customer.updated_at)
-        ]);
-        syncedCount++;
+        await prisma.customer.upsert({
+          where: {
+            tenantId_shopifyCustomerId: {
+              tenantId: tenantId,
+              shopifyCustomerId: customer.id.toString()
+            }
+          },
+          update: {
+            email: customer.email,
+            firstName: customer.first_name,
+            lastName: customer.last_name,
+            totalSpent: parseFloat(customer.total_spent || 0),
+            ordersCount: customer.orders_count || 0,
+            phone: customer.phone,
+            acceptsMarketing: customer.accepts_marketing || false,
+            updatedAt: new Date()
+          },
+          create: {
+            tenantId: tenantId,
+            shopifyCustomerId: customer.id.toString(),
+            email: customer.email,
+            firstName: customer.first_name,
+            lastName: customer.last_name,
+            totalSpent: parseFloat(customer.total_spent || 0),
+            ordersCount: customer.orders_count || 0,
+            phone: customer.phone,
+            acceptsMarketing: customer.accepts_marketing || false
+          }
+        });
+        syncCount++;
       }
-      
-      await client.end();
-      
-      return {
-        success: true,
-        message: `Synced ${syncedCount} customers for tenant ${tenantId}`,
-        count: syncedCount
-      };
-      
+
+      console.log(`✅ Synced ${syncCount} customers for tenant ${tenantId}`);
+      return { success: true, synced: syncCount, total: customers.length };
+
     } catch (error) {
-      await client.end();
-      console.error(`❌ Customer sync error for tenant ${tenantId}:`, error);
-      return {
-        success: false,
-        message: `Failed to sync customers for tenant ${tenantId}`,
-        error: error.message
-      };
+      console.error('Customer sync error:', error.message);
+      return { success: false, error: error.message };
     }
   }
 
-  // Sync products for specific tenant  
-  async syncProducts(tenantId = '1') {
-    const client = new Client(dbConfig);
-    
+  // Sync products with dynamic tenant support
+  async syncProducts(tenantId) {
     try {
-      console.log(`🔄 Syncing products for tenant ${tenantId}...`);
-      const products = await this.getProducts(tenantId);
-      
-      await client.connect();
-      
-      let syncedCount = 0;
-      
+      const config = await this.getStoreConfig(tenantId);
+      console.log(`🔄 Syncing products for tenant ${tenantId} (${config.storeName})...`);
+
+      const response = await axios.get(`https://${config.storeUrl}/admin/api/2023-07/products.json`, {
+        headers: { 'X-Shopify-Access-Token': config.accessToken }
+      });
+
+      const products = response.data.products;
+      let syncCount = 0;
+
       for (const product of products) {
-        await client.query(`
-          INSERT INTO products (
-            "shopifyId", "tenantId", title, "bodyHtml", vendor, 
-            "productType", price, "createdAt", "updatedAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          ON CONFLICT ("shopifyId", "tenantId") 
-          DO UPDATE SET
-            title = EXCLUDED.title,
-            "bodyHtml" = EXCLUDED."bodyHtml",
-            vendor = EXCLUDED.vendor,
-            "productType" = EXCLUDED."productType", 
-            price = EXCLUDED.price,
-            "updatedAt" = EXCLUDED."updatedAt"
-        `, [
-          product.id,
-          tenantId,
-          product.title,
-          product.body_html,
-          product.vendor,
-          product.product_type,
-          parseFloat(product.variants?.[0]?.price || 0),
-          new Date(product.created_at),
-          new Date(product.updated_at)
-        ]);
-        syncedCount++;
+        const variant = product.variants[0] || {};
+        
+        await prisma.product.upsert({
+          where: {
+            tenantId_shopifyProductId: {
+              tenantId: tenantId,
+              shopifyProductId: product.id.toString()
+            }
+          },
+          update: {
+            title: product.title,
+            handle: product.handle,
+            description: product.body_html,
+            vendor: product.vendor,
+            productType: product.product_type,
+            price: parseFloat(variant.price || 0),
+            inventory: variant.inventory_quantity || 0,
+            status: product.status === 'active' ? 'ACTIVE' : 'DRAFT',
+            updatedAt: new Date()
+          },
+          create: {
+            tenantId: tenantId,
+            shopifyProductId: product.id.toString(),
+            title: product.title,
+            handle: product.handle,
+            description: product.body_html,
+            vendor: product.vendor,
+            productType: product.product_type,
+            price: parseFloat(variant.price || 0),
+            inventory: variant.inventory_quantity || 0,
+            status: product.status === 'active' ? 'ACTIVE' : 'DRAFT'
+          }
+        });
+        syncCount++;
       }
-      
-      await client.end();
-      
-      return {
-        success: true,
-        message: `Synced ${syncedCount} products for tenant ${tenantId}`,
-        count: syncedCount
-      };
-      
+
+      console.log(`✅ Synced ${syncCount} products for tenant ${tenantId}`);
+      return { success: true, synced: syncCount, total: products.length };
+
     } catch (error) {
-      await client.end();
-      console.error(`❌ Product sync error for tenant ${tenantId}:`, error);
-      return {
-        success: false,
-        message: `Failed to sync products for tenant ${tenantId}`,
-        error: error.message
-      };
+      console.error('Product sync error:', error.message);
+      return { success: false, error: error.message };
     }
   }
 
-  // Sync orders for specific tenant
-  async syncOrders(tenantId = '1') {
-    const client = new Client(dbConfig);
-    
+  // Sync orders with dynamic tenant support
+  async syncOrders(tenantId) {
     try {
-      console.log(`🔄 Syncing orders for tenant ${tenantId}...`);
-      const orders = await this.getOrders(tenantId);
-      
-      await client.connect();
-      
-      let syncedCount = 0;
-      
+      const config = await this.getStoreConfig(tenantId);
+      console.log(`🔄 Syncing orders for tenant ${tenantId} (${config.storeName})...`);
+
+      const response = await axios.get(`https://${config.storeUrl}/admin/api/2023-07/orders.json`, {
+        headers: { 'X-Shopify-Access-Token': config.accessToken }
+      });
+
+      const orders = response.data.orders;
+      let syncCount = 0;
+
       for (const order of orders) {
-        await client.query(`
-          INSERT INTO orders (
-            "shopifyId", "tenantId", "customerId", "totalPrice", 
-            "financialStatus", "fulfillmentStatus", "createdAt", "updatedAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT ("shopifyId", "tenantId") 
-          DO UPDATE SET
-            "customerId" = EXCLUDED."customerId",
-            "totalPrice" = EXCLUDED."totalPrice",
-            "financialStatus" = EXCLUDED."financialStatus",
-            "fulfillmentStatus" = EXCLUDED."fulfillmentStatus",
-            "updatedAt" = EXCLUDED."updatedAt"
-        `, [
-          order.id,
-          tenantId,
-          order.customer?.id || null,
-          parseFloat(order.total_price || 0),
-          order.financial_status,
-          order.fulfillment_status,
-          new Date(order.created_at),
-          new Date(order.updated_at)
-        ]);
-        syncedCount++;
+        // Find customer by Shopify ID
+        const customer = await prisma.customer.findFirst({
+          where: {
+            tenantId: tenantId,
+            shopifyCustomerId: order.customer?.id?.toString()
+          }
+        });
+
+        await prisma.order.upsert({
+          where: {
+            tenantId_shopifyOrderId: {
+              tenantId: tenantId,
+              shopifyOrderId: order.id.toString()
+            }
+          },
+          update: {
+            customerId: customer?.id || null,
+            orderNumber: order.order_number?.toString() || order.name,
+            totalPrice: parseFloat(order.total_price || 0),
+            subtotalPrice: parseFloat(order.subtotal_price || 0),
+            taxAmount: parseFloat(order.total_tax || 0),
+            currency: order.currency || 'USD',
+            financialStatus: order.financial_status || 'pending',
+            fulfillmentStatus: order.fulfillment_status || null,
+            orderStatus: order.cancelled_at ? 'CANCELLED' : 'OPEN',
+            processedAt: order.processed_at ? new Date(order.processed_at) : null,
+            updatedAt: new Date()
+          },
+          create: {
+            tenantId: tenantId,
+            shopifyOrderId: order.id.toString(),
+            customerId: customer?.id || null,
+            orderNumber: order.order_number?.toString() || order.name,
+            totalPrice: parseFloat(order.total_price || 0),
+            subtotalPrice: parseFloat(order.subtotal_price || 0),
+            taxAmount: parseFloat(order.total_tax || 0),
+            currency: order.currency || 'USD',
+            financialStatus: order.financial_status || 'pending',
+            fulfillmentStatus: order.fulfillment_status || null,
+            orderStatus: order.cancelled_at ? 'CANCELLED' : 'OPEN',
+            processedAt: order.processed_at ? new Date(order.processed_at) : null
+          }
+        });
+        syncCount++;
       }
-      
-      await client.end();
-      
-      return {
-        success: true,
-        message: `Synced ${syncedCount} orders for tenant ${tenantId}`,
-        count: syncedCount
-      };
-      
+
+      console.log(`✅ Synced ${syncCount} orders for tenant ${tenantId}`);
+      return { success: true, synced: syncCount, total: orders.length };
+
     } catch (error) {
-      await client.end();
-      console.error(`❌ Order sync error for tenant ${tenantId}:`, error);
-      return {
-        success: false,
-        message: `Failed to sync orders for tenant ${tenantId}`,
-        error: error.message
-      };
+      console.error('Order sync error:', error.message);
+      return { success: false, error: error.message };
     }
   }
 
-  // Sync all data for specific tenant
-  async syncAll(tenantId = '1') {
+  // Sync all data with dynamic tenant support
+  async syncAll(tenantId) {
     try {
       console.log(`🚀 Starting full sync for tenant ${tenantId}...`);
       
-      const [customers, products, orders] = await Promise.all([
+      const [customersResult, productsResult, ordersResult] = await Promise.all([
         this.syncCustomers(tenantId),
-        this.syncProducts(tenantId), 
+        this.syncProducts(tenantId),
         this.syncOrders(tenantId)
       ]);
-      
+
       return {
         success: true,
-        message: `Full sync completed for tenant ${tenantId}`,
-        results: { customers, products, orders }
+        customers: customersResult,
+        products: productsResult,
+        orders: ordersResult,
+        message: `Full sync completed for tenant ${tenantId}`
       };
-      
     } catch (error) {
-      console.error(`❌ Full sync error for tenant ${tenantId}:`, error);
-      return {
-        success: false,
-        message: `Failed to sync all data for tenant ${tenantId}`,
-        error: error.message
-      };
+      console.error('Full sync error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Get customers for validation
+  async getCustomers(tenantId = '1') {
+    try {
+      const config = await this.getStoreConfig(tenantId);
+      const response = await axios.get(`https://${config.storeUrl}/admin/api/2023-07/customers.json`, {
+        headers: { 'X-Shopify-Access-Token': config.accessToken }
+      });
+      return response.data.customers;
+    } catch (error) {
+      console.error('Get customers error:', error.message);
+      return [];
     }
   }
 }
