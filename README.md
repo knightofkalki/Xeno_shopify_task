@@ -1,4 +1,4 @@
-<img width="452" height="270" alt="image" src="https://github.com/user-attachments/assets/ca26cd26-3c05-4759-8682-a5a6fdce2098" /><img width="452" height="270" alt="image" src="https://github.com/user-attachments/assets/ef9cf8ee-b87a-4287-8133-0c0a54288787" />Xeno Analytics - Multi-Tenant Shopify Data Ingestion & Insights Service
+Xeno Analytics - Multi-Tenant Shopify Data Ingestion & Insights Service
 📋 Project Overview
 Xeno Analytics is a comprehensive multi-tenant Shopify data ingestion and insights service that helps enterprise retailers onboard, integrate, and analyze their customer data. Built with modern web technologies, it provides real-time data synchronization, advanced analytics, and a professional dashboard interface.
 
