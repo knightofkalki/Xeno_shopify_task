@@ -4,8 +4,8 @@
   "description": "Multi-tenant Shopify analytics dashboard with modern architecture",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js",
+    "dev": "nodemon simple-server.js",
+    "start": "node simple-server.js",
     "db:generate": "npx prisma generate",
     "db:push": "npx prisma db push",
     "db:migrate": "npx prisma migrate dev",
