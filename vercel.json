@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "simple-server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     }
   ],
   "routes": [
@@ -11,11 +14,5 @@
       "src": "/(.*)",
       "dest": "simple-server.js"
     }
-  ],
-  "functions": {
-    "simple-server.js": {
-      "maxDuration": 30
-    }
-  },
-  "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi"
+  ]
 }
