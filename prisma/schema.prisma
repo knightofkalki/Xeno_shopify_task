@@ -1,10 +1,189 @@
 generator client {
   provider = "prisma-client-js"
-  previewFeatures = ["jsonProtocol"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+}
+
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  shopDomain    String   @unique
+  accessToken   String?
+  apiVersion    String   @default("2023-07")
+  isActive      Boolean  @default(true)
+  settings      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  users         User[]
+  customers     Customer[]
+  products      Product[]
+  orders        Order[]
+  customEvents  CustomEvent[]
+  
+  @@index([isActive])
+  @@index([shopDomain])
+  @@map("tenants")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   
+  firstName String?
+  lastName  String?
+  tenantId  String
+  role      UserRole @default(ADMIN)
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@map("users")
+}
+
+model Customer {
+  id                String   @id @default(cuid())
+  tenantId          String
+  shopifyCustomerId String
+  email             String?
+  firstName         String?
+  lastName          String?
+  phone             String?
+  totalSpent        Decimal  @default(0) @db.Decimal(12,2)
+  ordersCount       Int      @default(0)
+  tags              String[]
+  acceptsMarketing  Boolean  @default(false)
+  state             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders            Order[]
+  
+  @@unique([tenantId, shopifyCustomerId])
+  @@index([tenantId, email])
+  @@index([tenantId, totalSpent])
+  @@index([tenantId, createdAt])
+  @@map("customers")
+}
+
+model Product {
+  id               String   @id @default(cuid())
+  tenantId         String
+  shopifyProductId String
+  title            String
+  handle           String?
+  description      String?
+  vendor           String?
+  productType      String?
+  price            Decimal  @default(0) @db.Decimal(10,2)
+  compareAtPrice   Decimal? @db.Decimal(10,2)
+  inventory        Int      @default(0)
+  status           ProductStatus @default(ACTIVE)
+  images           Json?
+  tags             String[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderItems       OrderItem[]
+  
+  @@unique([tenantId, shopifyProductId])
+  @@index([tenantId, status])
+  @@index([tenantId, vendor])
+  @@index([tenantId, productType])
+  @@map("products")
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  tenantId         String
+  shopifyOrderId   String
+  customerId       String?
+  orderNumber      String
+  totalPrice       Decimal     @default(0) @db.Decimal(12,2)
+  subtotalPrice    Decimal     @default(0) @db.Decimal(12,2)
+  taxAmount        Decimal     @default(0) @db.Decimal(10,2)
+  shippingAmount   Decimal     @default(0) @db.Decimal(10,2)
+  discountAmount   Decimal     @default(0) @db.Decimal(10,2)
+  currency         String      @default("USD")
+  financialStatus  String
+  fulfillmentStatus String?
+  orderStatus      OrderStatus @default(OPEN)
+  processedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer         Customer?   @relation(fields: [customerId], references: [id])
+  orderItems       OrderItem[]
+  
+  @@unique([tenantId, shopifyOrderId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, customerId])
+  @@index([tenantId, totalPrice])
+  @@index([tenantId, financialStatus])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String?
+  title     String
+  quantity  Int
+  price     Decimal @db.Decimal(10,2)
+  totalPrice Decimal @db.Decimal(10,2)
+  sku       String?
+  
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id])
+  
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model CustomEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  eventType String
+  eventData Json?
+  userId    String?
+  sessionId String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId, eventType])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, userId])
+  @@index([sessionId])
+  @@map("custom_events")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+enum ProductStatus {
+  ACTIVE
+  DRAFT
+  ARCHIVED
+}
+
+enum OrderStatus {
+  OPEN
+  CLOSED
+  CANCELLED
 }
