@@ -11,11 +11,17 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3005;
 const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['https://xeno-shopify-task.vercel.app', 'http://localhost:3000', 'http://localhost:3001'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use('/api/webhooks', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
@@ -895,7 +901,9 @@ app.post('/api/cache/clear', (req, res) => {
 
 
 
-
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 // Start server
 app.listen(PORT, () => {
   console.log('🎉 XENO SHOPIFY SERVICE - CLEAN VERSION WITH SETTINGS API');
