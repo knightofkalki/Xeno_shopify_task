@@ -203,6 +203,7 @@ PostgreSQL database
 
 
 Step 1: Create Shopify Partner Account
+<img width="452" height="270" alt="image" src="https://github.com/user-attachments/assets/5b24e594-8a99-4a97-b178-13cab08c0f53" />
 
 Go to partners.shopify.com
 
@@ -212,9 +213,10 @@ Fill in your details and create account
 
 This gives you access to development stores
 
-Image 2: Development Store Creation
+
 
 Step 2: Create Development Store
+<img width="452" height="270" alt="image" src="https://github.com/user-attachments/assets/59065c0b-0335-485a-ac81-901d4952c5c6" />
 
 In Partners dashboard, click "Stores"
 
@@ -224,9 +226,10 @@ Choose "Create a new development store"
 
 Fill in store details and click "Save"
 
-Image 3: Store Configuration
+
 
 Step 3: Configure Store Settings
+<img width="452" height="320" alt="image" src="https://github.com/user-attachments/assets/0fd681dd-5b04-4811-bed3-265b49a38d33" />
 
 Enter store name (e.g., "Xeno Analytics Test Store")
 
@@ -236,9 +239,10 @@ Select store purpose: "To test and develop apps"
 
 Click "Create development store"
 
-Image 4: Store Dashboard Access
+
 
 Step 4: Access Your Store
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/fcfa1601-0997-477a-bba0-4ac17752cd8f" />
 
 Once created, click on your store name
 
@@ -248,9 +252,9 @@ Click "Open store" to view frontend
 
 Click "Admin" to access dashboard
 
-Image 5: Admin Dashboard
 
 Step 5: Shopify Admin Panel
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/14463b26-8bbb-4b97-98d8-ac643f33eeea" />
 
 This is your main admin interface
 
@@ -260,9 +264,10 @@ You can manage products, customers, orders here
 
 Note the store URL for API integration
 
-Image 6: Products Section
+
 
 Step 6: Add Sample Products
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/0b782f95-7016-4514-b458-d03ee85636a0" />
 
 Click "Products" in left sidebar
 
@@ -276,9 +281,10 @@ Images, inventory
 
 SEO settings
 
-Image 7: Product Creation Form
+
 
 Step 7: Fill Product Details
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/0f52a372-a052-4682-bfc8-d45991ce3962" />
 
 Title: "Sample T-Shirt"
 
@@ -292,9 +298,10 @@ Inventory: Set quantity
 
 Click "Save"
 
-Image 8: Customers Section
+
 
 Step 8: Add Sample Customers
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/7beec8f8-eca5-498b-b2dc-90667247cfd7" />
 
 Click "Customers" in sidebar
 
@@ -308,9 +315,10 @@ Address details
 
 Notes if needed
 
-Image 9: Customer Creation Form
+
 
 Step 9: Customer Details
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/a33d1e28-9681-4a26-bc8a-e36cf30fc1bc" />
 
 First Name: "John"
 
@@ -324,9 +332,10 @@ Address: Fill complete address
 
 Click "Save customer"
 
-Image 10: Orders Section
+
 
 Step 10: Create Sample Orders
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/e747254e-cea0-4ad5-a1dd-91151502e95b" />
 
 Click "Orders" in sidebar
 
@@ -340,9 +349,10 @@ Set payment status
 
 Click "Save"
 
-Image 11: Apps Section
+
 
 Step 11: API Access Setup
+<img width="452" height="269" alt="image" src="https://github.com/user-attachments/assets/5281a675-32f4-4eb0-883e-1327e72a8da7" />
 
 Click "Apps" in sidebar
 
