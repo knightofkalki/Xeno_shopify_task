@@ -3,10 +3,7 @@
   "builds": [
     {
       "src": "simple-server.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -14,11 +11,7 @@
       "src": "/(.*)",
       "dest": "simple-server.js"
     }
-<<<<<<< HEAD
   ],
   "installCommand": "npm install && npx prisma generate",
   "buildCommand": "npx prisma generate"
-=======
-  ]
->>>>>>> c0e659cd998cf201f596c643ceba7c307033e9a7
 }
