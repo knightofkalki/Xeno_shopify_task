@@ -11,19 +11,27 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 
 const app = express();
-const PORT = process.env.PORT || 3005;
 const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 
-// Middleware
+// CORS - Frontend connection
 app.use(cors({
-  origin: ['https://xeno-shopify-task.vercel.app', 'http://localhost:3000', 'http://localhost:3001'],
+  origin: [
+    'https://xeno-shopify-task.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3005',
+    /\.vercel\.app$/
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with'],
   credentials: true
 }));
 
+// Handle preflight requests
+app.options('*', cors());
+
 app.use('/api/webhooks', express.raw({ type: 'application/json' }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Simple cache
 const cache = new Map();
@@ -37,12 +45,10 @@ const cacheSet = (key, value, ttl = 300) => {
   cache.set(key, { value, expiry: Date.now() + (ttl * 1000) });
 };
 
-// ✅ JWT AUTHENTICATION MIDDLEWARE - ADD THIS
+// JWT Authentication Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
-  console.log('🔧 Auth middleware - Token received:', token ? 'Yes' : 'No');
 
   if (!token) {
     return res.status(401).json({ 
@@ -53,14 +59,12 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.log('🔧 JWT verify error:', err.message);
       return res.status(403).json({ 
         success: false, 
         message: 'Invalid token' 
       });
     }
     req.user = decoded;
-    console.log('🔧 User authenticated:', decoded.email);
     next();
   });
 };
@@ -295,9 +299,10 @@ const analyticsService = {
 // Routes
 app.get('/', (req, res) => {
   res.json({
-    message: 'Xeno Shopify Service API',
+    message: 'Xeno Shopify Service API - Vercel Deployment',
     version: '4.0.0',
-    status: 'Running with clean architecture'
+    status: 'Running on Vercel Serverless',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -305,17 +310,18 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    database: 'Connected via Prisma'
+    database: 'Connected via Prisma',
+    platform: 'Vercel Serverless'
   });
 });
 
-// ✅ TEST ENDPOINT - ADD THIS
 app.get('/api/test', (req, res) => {
   res.json({
     success: true,
-    message: 'Backend API working!',
+    message: 'Backend API working on Vercel!',
     timestamp: new Date().toISOString(),
-    server: 'Xeno Shopify Service'
+    server: 'Xeno Shopify Service',
+    platform: 'Vercel'
   });
 });
 
@@ -333,7 +339,8 @@ app.get('/test-db', async (req, res) => {
         customers: customerCount,
         products: productCount,
         orders: orderCount
-      }
+      },
+      platform: 'Vercel Serverless'
     });
   } catch (error) {
     res.status(500).json({ 
@@ -343,7 +350,7 @@ app.get('/test-db', async (req, res) => {
   }
 });
 
-// Authentication
+// Authentication Routes
 app.post('/api/auth/register-tenant', async (req, res) => {
   try {
     const { 
@@ -506,7 +513,6 @@ app.post('/api/auth/login-tenant', async (req, res) => {
   }
 });
 
-// Legacy auth (for backwards compatibility)
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   
@@ -545,13 +551,9 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ✅ PROFILE UPDATE ENDPOINT - ADD THIS
+// Profile endpoints
 app.put('/api/user/profile', authenticateToken, async (req, res) => {
   try {
-    console.log('🔧 Profile update endpoint hit!');
-    console.log('🔧 User from token:', req.user);
-    console.log('🔧 Request body:', req.body);
-    
     const { shopDomain, accessToken } = req.body;
     const userId = req.user.userId;
     const tenantId = req.user.tenantId;
@@ -563,7 +565,6 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
       });
     }
 
-    // Update tenant information in database
     const updatedTenant = await prisma.tenant.update({
       where: { id: tenantId },
       data: {
@@ -572,8 +573,6 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
         updatedAt: new Date()
       }
     });
-
-    console.log(`✅ Updated tenant ${tenantId} store settings`);
 
     res.json({
       success: true,
@@ -586,7 +585,6 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Profile update error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update profile',
@@ -595,7 +593,6 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ GET USER PROFILE ENDPOINT - ADD THIS
 app.get('/api/user/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -637,7 +634,6 @@ app.get('/api/user/profile', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Get profile error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get profile',
@@ -674,7 +670,7 @@ app.get('/api/dashboard/:tenantId', async (req, res) => {
   }
 });
 
-// Analytics
+// Analytics endpoints
 app.get('/api/analytics/orders-by-date', async (req, res) => {
   try {
     const { tenantId = '1', startDate, endDate } = req.query;
@@ -897,28 +893,34 @@ app.post('/api/cache/clear', (req, res) => {
   }
 });
 
-
-
-
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  });
 });
-// Start server
-app.listen(PORT, () => {
-  console.log('🎉 XENO SHOPIFY SERVICE - CLEAN VERSION WITH SETTINGS API');
-  console.log(`🚀 Server: http://localhost:${PORT}`);
-  console.log(`📊 Health: http://localhost:${PORT}/health`);
-  console.log(`🔧 Test: http://localhost:${PORT}/api/test`);
-  console.log(`🗄️ Database: Prisma ORM Connected`);
-  console.log('✅ Core Features:');
-  console.log('   • Authentication & Registration');
-  console.log('   • Dashboard Analytics');
-  console.log('   • Customer Management');
-  console.log('   • Data Sync');
-  console.log('   • Settings Support ✅ NEW');
-  console.log('🔧 NEW API Endpoints:');
-  console.log('   • PUT /api/user/profile - Update store settings');
-  console.log('   • GET /api/user/profile - Get user profile');
-  console.log('   • GET /api/test - Test backend connection');
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    path: req.originalUrl
+  });
 });
+
+// Export for Vercel
+module.exports = app;
+
+// Start server only in development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = 3005;
+  app.listen(PORT, () => {
+    console.log(`🚀 Development Server: http://localhost:${PORT}`);
+    console.log(`🔧 Test: http://localhost:${PORT}/api/test`);
+    console.log(`📊 Health: http://localhost:${PORT}/health`);
+  });
+}

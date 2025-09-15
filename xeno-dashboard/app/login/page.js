@@ -18,7 +18,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/login-tenant', {
+      const response = await fetch('http://localhost:3005/api/auth/login-tenant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })

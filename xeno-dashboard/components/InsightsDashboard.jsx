@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = 'http://localhost:3005';
 
 export default function InsightsDashboard({ tenantId }) {
   const [dashboardData, setDashboardData] = useState({

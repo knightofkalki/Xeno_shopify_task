@@ -9,7 +9,7 @@ const ShopifyService = require('./src/services/shopifyService'); // CLASS import
 const shopifyService = new ShopifyService(); // Create instance
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3005;
 
 // Add this route to check environment variables
 app.get('/debug/env', (req, res) => {

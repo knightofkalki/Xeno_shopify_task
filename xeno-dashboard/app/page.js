@@ -6,7 +6,8 @@ import OrdersByDateChart from '../components/OrdersByDateChart';
 import BusinessMetricsCharts from '../components/BusinessMetricsCharts';
 import SettingsPage from '../components/SettingsPage';
 
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
+
 
 export default function Dashboard() {
   const { isAuthenticated, loading: authLoading, user, logout, getAuthHeaders } = useAuth();

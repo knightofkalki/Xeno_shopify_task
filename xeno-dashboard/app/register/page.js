@@ -44,7 +44,7 @@ export default function Register() {
     }
 
     try {
-      const response = await fetch('http://localhost:3001/api/auth/register-tenant', {
+      const response = await fetch('http://localhost:3005/api/auth/register-tenant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
