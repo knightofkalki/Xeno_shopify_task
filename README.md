@@ -1,4 +1,4 @@
-Xeno Analytics - Multi-Tenant Shopify Data Ingestion & Insights Service
+<img width="452" height="270" alt="image" src="https://github.com/user-attachments/assets/ca26cd26-3c05-4759-8682-a5a6fdce2098" /><img width="452" height="270" alt="image" src="https://github.com/user-attachments/assets/ef9cf8ee-b87a-4287-8133-0c0a54288787" />Xeno Analytics - Multi-Tenant Shopify Data Ingestion & Insights Service
 📋 Project Overview
 Xeno Analytics is a comprehensive multi-tenant Shopify data ingestion and insights service that helps enterprise retailers onboard, integrate, and analyze their customer data. Built with modern web technologies, it provides real-time data synchronization, advanced analytics, and a professional dashboard interface.
 
@@ -200,6 +200,192 @@ Prerequisites:
 Node.js (v18 or higher)
 
 PostgreSQL database
+
+
+Step 1: Create Shopify Partner Account
+
+Go to partners.shopify.com
+
+Click "Join Shopify Partners"
+
+Fill in your details and create account
+
+This gives you access to development stores
+
+Image 2: Development Store Creation
+
+Step 2: Create Development Store
+
+In Partners dashboard, click "Stores"
+
+Click "Add store" → "Development store"
+
+Choose "Create a new development store"
+
+Fill in store details and click "Save"
+
+Image 3: Store Configuration
+
+Step 3: Configure Store Settings
+
+Enter store name (e.g., "Xeno Analytics Test Store")
+
+Choose your country/region
+
+Select store purpose: "To test and develop apps"
+
+Click "Create development store"
+
+Image 4: Store Dashboard Access
+
+Step 4: Access Your Store
+
+Once created, click on your store name
+
+You'll see store URL (e.g., your-store.myshopify.com)
+
+Click "Open store" to view frontend
+
+Click "Admin" to access dashboard
+
+Image 5: Admin Dashboard
+
+Step 5: Shopify Admin Panel
+
+This is your main admin interface
+
+Left sidebar has all management options
+
+You can manage products, customers, orders here
+
+Note the store URL for API integration
+
+Image 6: Products Section
+
+Step 6: Add Sample Products
+
+Click "Products" in left sidebar
+
+Click "Add product"
+
+Add product details:
+
+Title, description, price
+
+Images, inventory
+
+SEO settings
+
+Image 7: Product Creation Form
+
+Step 7: Fill Product Details
+
+Title: "Sample T-Shirt"
+
+Description: Add detailed description
+
+Price: Set price (e.g., $29.99)
+
+SKU: Add product code
+
+Inventory: Set quantity
+
+Click "Save"
+
+Image 8: Customers Section
+
+Step 8: Add Sample Customers
+
+Click "Customers" in sidebar
+
+Click "Add customer"
+
+Fill customer information:
+
+First/Last name, email, phone
+
+Address details
+
+Notes if needed
+
+Image 9: Customer Creation Form
+
+Step 9: Customer Details
+
+First Name: "John"
+
+Last Name: "Doe"
+
+Email: "john.doe@example.com"
+
+Phone: "+1234567890"
+
+Address: Fill complete address
+
+Click "Save customer"
+
+Image 10: Orders Section
+
+Step 10: Create Sample Orders
+
+Click "Orders" in sidebar
+
+Click "Create order"
+
+Add products to order
+
+Assign to customer
+
+Set payment status
+
+Click "Save"
+
+Image 11: Apps Section
+
+Step 11: API Access Setup
+
+Click "Apps" in sidebar
+
+Click "Manage private apps" (bottom)
+
+Click "Create private app"
+
+Set app name: "Xeno Analytics"
+
+Enable API permissions you need
+
+Save API Key and Password for your backend
+
+🔑 Important Information to Save:
+From your setup, save these details:
+
+bash
+# Store Information
+SHOPIFY_STORE_URL=your-store.myshopify.com
+SHOPIFY_API_KEY=your-api-key-here
+SHOPIFY_PASSWORD=your-api-password-here
+SHOPIFY_WEBHOOK_SECRET=your-webhook-secret
+
+# API Endpoints
+ADMIN_API_URL=https://your-store.myshopify.com/admin/api/2023-10/
+🎯 Next Steps for Integration:
+After setup, you can:
+
+Test API Connection - Use your API credentials
+
+Create Webhooks - For real-time data sync
+
+Import Data - Customers, products, orders
+
+Sync with Your App - Connect to your backend
+
+📝 Sample Data to Add:
+Products: 5-10 sample products with different categories
+Customers: 10-15 fake customers with varied data
+Orders: 20-30 sample orders with different statuses
+
+This will give you realistic data to work with in your Xeno Analytics dashboard! 🚀
+
 
 Git
 
