@@ -14,12 +14,15 @@ export function AuthProvider({ children }) {
       const token = localStorage.getItem('token');
       if (storedUser && token) {
         try {
-          const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
-          const res = await fetch(`${apiBase}/api/auth/validate-token`, {
-            method: 'POST',
+          // Use proxy to bypass CORS
+          const params = new URLSearchParams();
+          params.append('endpoint', '/api/auth/validate-token');
+          params.append('token', token);
+          
+          const res = await fetch(`/api/proxy?${params.toString()}`, {
+            method: 'GET',
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
+              'Content-Type': 'application/json'
             }
           });
           const data = await res.json();

@@ -44,14 +44,16 @@ export default function Register() {
     }
 
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
-      const response = await fetch(`${apiBase}/api/auth/register-tenant`, {
+      // Use local proxy to bypass CORS
+      const response = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'x-vercel-protection-bypass': 'xe_3a4f9b2c8d1e7f6g9h0i2j3k4l5m6n7o8p9q1r2s'
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ 
+          endpoint: '/api/auth/register-tenant',
+          ...formData
+        })
       });
 
       const data = await response.json();
