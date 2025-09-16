@@ -16,11 +16,21 @@ const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 
 // CORS - Frontend connection
 
-// TEMPORARY CORS FIX - ALLOW ALL ORIGINS
+// CORS Configuration - Clean for Railway deployment
 app.use(cors({
-  origin: true,  // Allow all origins temporarily
+  origin: [
+    'https://xeno-shopify-task.vercel.app',
+    'https://xeno-dashboard-1rc6acx4l-boardlys-projects.vercel.app',
+    'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:3005',
+    'http://localhost:3006',
+    /\.vercel\.app$/,
+    /\.railway\.app$/  // Allow Railway domains
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'x-user-email', 'x-tenant-id', 'X-User-Email', 'X-Tenant-ID', 'x-vercel-protection-bypass'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'x-user-email', 'x-tenant-id', 'X-User-Email', 'X-Tenant-ID'],
   credentials: true
 }));
 
