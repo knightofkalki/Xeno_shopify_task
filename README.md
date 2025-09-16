@@ -6,7 +6,7 @@ Xeno Analytics is a comprehensive multi-tenant Shopify data ingestion and insigh
 
 Frontend: https://xeno-shopify-task.vercel.app/login
 
-Backend API: https://xenospotifytask-production.up.railway.app
+Backend API: https://xeno-shopify-task-backendupd.vercel.app
 
 Database: PostgreSQL on Railway
 
@@ -43,7 +43,7 @@ Data Layer - PostgreSQL with Prisma ORM
 
 External Integration - Shopify API connectors
 
-Deployment - Vercel (Frontend) + Railway (Backend + DB)
+Deployment - Vercel (Frontend+Backend) +  railway (DB)
 
 🔧 Tech Stack
 Component	Technology	Purpose
