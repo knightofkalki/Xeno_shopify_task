@@ -6,6 +6,10 @@
     "vercel-build": "npx prisma generate && echo 'Build completed'",
     "postinstall": "prisma generate"
   },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "dependencies": {
     "@prisma/client": "^5.7.0",
     "axios": "^1.6.2",

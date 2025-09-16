@@ -2,5 +2,8 @@
   "version": 2,
   "builds": [
     { "src": "next.config.js", "use": "@vercel/next" }
-  ]
+  ],
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app"
+  }
 }

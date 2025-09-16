@@ -56,7 +56,8 @@ export default function SettingsPage() {
         accessToken: userInfo.accessToken ? 'Present' : 'Missing'
       }); // DEBUG
       
-      const response = await fetch('http://localhost:3005/api/user/profile', {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app';
+      const response = await fetch(`${apiBase}/api/user/profile`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',

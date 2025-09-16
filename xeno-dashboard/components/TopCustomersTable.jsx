@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 
-const BACKEND_URL = 'http://localhost:3005';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app';
 
 export default function TopCustomersTable({ tenantId }) {
   const [customers, setCustomers] = useState([]);

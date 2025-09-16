@@ -12,6 +12,8 @@
       "dest": "simple-server.js"
     }
   ],
-  "installCommand": "npm install && npx prisma generate",
-  "buildCommand": "npx prisma generate"
+  "buildCommand": "npx prisma generate",
+  "env": {
+    "PRISMA_QUERY_ENGINE_LIBRARY": "@prisma/query-engine-rhel-openssl-1.0.x"
+  }
 }
