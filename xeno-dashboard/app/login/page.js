@@ -18,17 +18,15 @@ export default function Login() {
     setError('');
 
     try {
-      // Use local proxy to bypass CORS
-      const response = await fetch('/api/proxy', {
+      // Direct call to backend - CORS should be fixed now
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app';
+      const response = await fetch(`${apiBase}/api/auth/login-tenant`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-vercel-protection-bypass': 'xe_3a4f9b2c8d1e7f6g9h0i2j3k4l5m6n7o8p9q1r2s'
         },
-        body: JSON.stringify({ 
-          endpoint: '/api/auth/login-tenant',
-          email: email.trim(), 
-          password: password.trim() 
-        })
+        body: JSON.stringify({ email: email.trim(), password: password.trim() })
       });
 
       const data = await response.json();
