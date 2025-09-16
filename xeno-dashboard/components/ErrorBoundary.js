@@ -27,7 +27,7 @@ class ErrorBoundary extends Component {
           color: '#dc2626'
         }}>
           <h2>Something went wrong</h2>
-          <p>We're sorry, but something unexpected happened.</p>
+          <p>We&apos;re sorry, but something unexpected happened.</p>
           <details>
             <summary>Error details</summary>
             <pre style={{ 
