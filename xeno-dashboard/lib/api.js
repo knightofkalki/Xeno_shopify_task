@@ -1,11 +1,13 @@
 import axios from 'axios';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
+const BYPASS_TOKEN = 'xenoshopifybypass2025secret12345';
 
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
+    'x-vercel-protection-bypass': BYPASS_TOKEN,
   },
 });
 
