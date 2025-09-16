@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app',
+    NEXT_PUBLIC_API_URL: 'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app',
   },
   eslint: {
     // Warning: This disables ESLint checks during production builds
