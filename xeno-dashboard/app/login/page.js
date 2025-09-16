@@ -18,8 +18,8 @@ export default function Login() {
     setError('');
 
     try {
-      // Direct API call to Railway backend (no CORS issues)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://xenoshopifytask-production.up.railway.app'}/api/auth/login-tenant`, {
+      // Direct API call to Railway backend (hardcoded URL to bypass env issues)
+      const response = await fetch('https://xenoshopifytask-production.up.railway.app/api/auth/login-tenant', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
