@@ -26,7 +26,7 @@ app.use(cors({
     /\.vercel\.app$/
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'x-user-email', 'x-tenant-id', 'X-User-Email', 'X-Tenant-ID'],
   credentials: true
 }));
 
