@@ -184,7 +184,7 @@ export default function CustomEventsChart({ tenantId }) {
               <div className="text-center">
                 <div className="text-4xl mb-4">📊</div>
                 <p className="text-lg font-semibold mb-2">No Custom Events Data</p>
-                <p className="text-sm mb-4">Click "Generate Demo Events" to create sample data</p>
+                <p className="text-sm mb-4">Click &quot;Generate Demo Events&quot; to create sample data</p>
                 <button
                   onClick={generateDemoEvents}
                   className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold"
@@ -201,7 +201,7 @@ export default function CustomEventsChart({ tenantId }) {
       <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
         <h3 className="font-bold text-blue-800 mb-2">📈 Business Insights:</h3>
         <div className="text-sm text-blue-700 space-y-1">
-          <p>• <strong>Cart Abandonment:</strong> Customers who added items but didn't proceed to checkout</p>
+          <p>• <strong>Cart Abandonment:</strong> Customers who added items but didn&apos;t proceed to checkout</p>
           <p>• <strong>Checkout Started:</strong> Customers who initiated the checkout process</p>
           <p>• <strong>Checkout Completed:</strong> Successful order completions</p>
           <p>• <strong>Conversion Funnel:</strong> Track user behavior from cart to purchase</p>

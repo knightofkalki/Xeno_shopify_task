@@ -97,8 +97,8 @@ export default function Register() {
               
               <ol style={{ paddingLeft: '1.5rem', marginBottom: '1rem' }}>
                 <li style={{ marginBottom: '0.5rem' }}>Go to <strong>Shopify Admin → Apps → App and sales channel settings</strong></li>
-                <li style={{ marginBottom: '0.5rem' }}>Click <strong>"Develop apps"</strong> → <strong>"Create an app"</strong></li>
-                <li style={{ marginBottom: '0.5rem' }}>Name it "Xeno Analytics" and configure these <strong>Admin API scopes</strong>:</li>
+                <li style={{ marginBottom: '0.5rem' }}>Click <strong>&quot;Develop apps&quot;</strong> → <strong>&quot;Create an app&quot;</strong></li>
+                <li style={{ marginBottom: '0.5rem' }}>Name it &quot;Xeno Analytics&quot; and configure these <strong>Admin API scopes</strong>:</li>
               </ol>
               
               <div style={{
@@ -135,7 +135,7 @@ export default function Register() {
                 cursor: 'pointer'
               }}
             >
-              📝 I'm Ready to Register
+              📝 I&apos;m Ready to Register
             </button>
           </div>
         )}

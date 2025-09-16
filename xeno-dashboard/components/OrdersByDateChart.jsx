@@ -103,7 +103,7 @@ export default function OrdersByDateChart({
             📈 Orders Analytics
           </h2>
           <p style={{ color: '#6b7280', fontSize: '0.875rem', margin: 0 }}>
-            Track your store's order trends and revenue performance
+            Track your store&apos;s order trends and revenue performance
           </p>
         </div>
         

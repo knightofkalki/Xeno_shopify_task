@@ -3,8 +3,9 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app',
   },
-  experimental: {
-    appDir: true,
+  eslint: {
+    // Warning: This disables ESLint checks during production builds
+    ignoreDuringBuilds: false,
   },
 }
 
