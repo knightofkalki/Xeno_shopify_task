@@ -1,13 +1,11 @@
 import axios from 'axios';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
-const BYPASS_TOKEN = 'xe_3a4f9b2c8d1e7f6g9h0i2j3k4l5m6n7o8p9q1r2s';
 
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
-    'x-vercel-protection-bypass': BYPASS_TOKEN,
   },
 });
 
