@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { prisma } = require('./src/config/database');
 const shopifyService = require('./src/services/shopifyService');
+const validateTokenRoute = require('./src/routes/validateToken');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 
@@ -14,11 +15,13 @@ const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 
 // CORS - Frontend connection
+
 app.use(cors({
   origin: [
     'https://xeno-shopify-task.vercel.app',
     'http://localhost:3000',
     'http://localhost:3005',
+    'https://xeno-shopify-task-backendupd.vercel.app',
     /\.vercel\.app$/
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -30,6 +33,7 @@ app.use(cors({
 app.options('*', cors());
 
 app.use('/api/webhooks', express.raw({ type: 'application/json' }));
+app.use('/api/auth', validateTokenRoute);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -513,43 +517,6 @@ app.post('/api/auth/login-tenant', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  
-  const validUsers = {
-    'admin@xeno.com': 'admin123',
-    'ujjwal@techmart.com': 'password123',
-    'uaggarwal9897@gmail.com': 'password123'
-  };
-  
-  try {
-    if (validUsers[email] && validUsers[email] === password) {
-      const token = jwt.sign(
-        { email, userId: email.split('@')[0] },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      
-      res.json({
-        success: true,
-        token,
-        user: { email, name: email.split('@')[0] },
-        message: 'Login successful'
-      });
-    } else {
-      res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Login failed',
-      error: error.message
-    });
-  }
-});
 
 // Profile endpoints
 app.put('/api/user/profile', authenticateToken, async (req, res) => {
@@ -915,11 +882,11 @@ app.use('*', (req, res) => {
 // Export for Vercel
 module.exports = app;
 
-// Start server only in development
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = 3005;
+// Always start server if run directly (not as a Vercel lambda)
+if (require.main === module) {
+  const PORT = process.env.PORT || 3005;
   app.listen(PORT, () => {
-    console.log(`🚀 Development Server: http://localhost:${PORT}`);
+    console.log(`🚀 Server running: http://localhost:${PORT}`);
     console.log(`🔧 Test: http://localhost:${PORT}/api/test`);
     console.log(`📊 Health: http://localhost:${PORT}/health`);
   });

@@ -8,12 +8,39 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored auth on mount
-    const storedUser = localStorage.getItem('xeno_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    // Check for stored auth and validate token with backend on mount
+    const checkAuth = async () => {
+      const storedUser = localStorage.getItem('xeno_user');
+      const token = localStorage.getItem('token');
+      if (storedUser && token) {
+        try {
+          const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+          const res = await fetch(`${apiBase}/api/auth/validate-token`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setUser(JSON.parse(storedUser));
+          } else {
+            setUser(null);
+            localStorage.removeItem('xeno_user');
+            localStorage.removeItem('token');
+          }
+        } catch (err) {
+          setUser(null);
+          localStorage.removeItem('xeno_user');
+          localStorage.removeItem('token');
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    };
+    checkAuth();
   }, []);
 
   const login = async (userData) => {
@@ -22,9 +49,16 @@ export function AuthProvider({ children }) {
       tenantId: userData.tenantId,
       tenantName: userData.tenantName,
       tenantDomain: userData.tenantDomain,
-      loginTime: new Date().toISOString()
+      loginTime: new Date().toISOString(),
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      role: userData.role,
+      tenant: {
+        id: userData.tenantId,
+        name: userData.tenantName,
+        domain: userData.tenantDomain
+      }
     };
-    
     setUser(userInfo);
     localStorage.setItem('xeno_user', JSON.stringify(userInfo));
     return { success: true };
@@ -33,6 +67,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('xeno_user');
+    localStorage.removeItem('token');
   };
 
   const isAuthenticated = () => {
@@ -40,8 +75,10 @@ export function AuthProvider({ children }) {
   };
 
   const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
     return {
       'Content-Type': 'application/json',
+      'Authorization': token ? `Bearer ${token}` : '',
       'X-User-Email': user?.email || '',
       'X-Tenant-ID': user?.tenantId || '1'
     };
