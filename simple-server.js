@@ -1,6 +1,14 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
+// Debug environment variables for Railway
+console.log('🌍 Environment check:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+console.log('Available env vars with DB/POSTGRES:', Object.keys(process.env).filter(key => 
+  key.includes('DATABASE') || key.includes('POSTGRES') || key.includes('DB')
+));
+
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');

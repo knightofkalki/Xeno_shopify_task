@@ -1,14 +1,26 @@
 const { PrismaClient } = require('@prisma/client');
 
+// Get database URL from environment variables
+const getDatabaseUrl = () => {
+  // Try different environment variable names that Railway might use
+  return process.env.DATABASE_URL || 
+         process.env.DATABASE_PUBLIC_URL || 
+         process.env.POSTGRES_URL ||
+         process.env.DB_URL ||
+         "postgresql://postgres:KxjzkobotyaeyBzMvOlxCdopihZitajp@shinkansen.proxy.rlwy.net:36517/railway";
+};
+
+console.log('🔍 Database URL check:', getDatabaseUrl() ? 'Found' : 'Missing');
+
 // Vercel Serverless Optimized Database Connection
 let prisma;
 
 if (process.env.NODE_ENV === 'production') {
-  // Production - Vercel Serverless
+  // Production - Railway/Vercel
   prisma = new PrismaClient({
     datasources: {
       db: {
-        url: process.env.DATABASE_URL
+        url: getDatabaseUrl()
       }
     },
     log: ['error', 'warn'],
