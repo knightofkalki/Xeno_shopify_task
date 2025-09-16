@@ -19,6 +19,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 app.use(cors({
   origin: [
     'https://xeno-shopify-task.vercel.app',
+    'https://xeno-dashboard-1rc6acx4l-boardlys-projects.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3005',
@@ -26,7 +27,7 @@ app.use(cors({
     /\.vercel\.app$/
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'x-user-email', 'x-tenant-id', 'X-User-Email', 'X-Tenant-ID'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'x-user-email', 'x-tenant-id', 'X-User-Email', 'X-Tenant-ID', 'x-vercel-protection-bypass'],
   credentials: true
 }));
 
