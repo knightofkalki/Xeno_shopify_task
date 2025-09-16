@@ -1,4 +1,4 @@
-const BACKEND_URL = 'http://localhost:3005';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005';
 
 export const trackEvent = async (eventType, eventData, tenantId = '1') => {
   try {
