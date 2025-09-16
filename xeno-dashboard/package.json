@@ -1,6 +1,6 @@
 {
   "name": "xeno-shopify-dashboard",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "description": "Shopify Analytics Dashboard Frontend",
   "private": true,
   "scripts": {

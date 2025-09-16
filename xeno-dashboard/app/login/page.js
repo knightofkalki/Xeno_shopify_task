@@ -18,9 +18,12 @@ export default function Login() {
     setError('');
 
     try {
-      // Direct API call to Railway backend (hardcoded URL to bypass env issues) - v2.0
-      console.log('🚀 Making API call to Railway backend:', 'https://xenoshopifytask-production.up.railway.app/api/auth/login-tenant');
-      const response = await fetch('https://xenoshopifytask-production.up.railway.app/api/auth/login-tenant', {
+      // NUCLEAR OPTION: Direct Railway URL (v3.0 - BYPASS ALL CACHING)
+      const RAILWAY_URL = 'https://xenoshopifytask-production.up.railway.app';
+      console.log('🔥 NUCLEAR VERSION 3.0 - Using Railway URL:', RAILWAY_URL);
+      console.log('🔥 If you see the old URL in network tab, clear ALL browser data!');
+      
+      const response = await fetch(`${RAILWAY_URL}/api/auth/login-tenant?t=${Date.now()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
