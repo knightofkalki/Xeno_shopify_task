@@ -181,7 +181,7 @@ export default function InsightsDashboard({ tenantId }) {
         </div>
         
         <div style={{ position: 'relative', height: '300px', background: '#f9fafb', borderRadius: '0.5rem', padding: '1rem' }}>
-          <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+          <svg width="100%" height="100%" style={{ overflow: "visible" }}>
             {/* Grid Lines */}
             {[0, 25, 50, 75, 100].map((y) => (
               <line
