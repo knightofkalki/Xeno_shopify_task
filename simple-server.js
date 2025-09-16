@@ -16,18 +16,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'xeno-shopify-secret-key';
 
 // CORS - Frontend connection
 
+// TEMPORARY CORS FIX - ALLOW ALL ORIGINS
 app.use(cors({
-  origin: [
-    'https://xeno-shopify-task.vercel.app',
-    'https://xeno-dashboard-1rc6acx4l-boardlys-projects.vercel.app',
-    'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app',
-    'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:3005',
-    'https://xeno-shopify-task-backendupd.vercel.app',
-    /\.vercel\.app$/
-  ],
+  origin: true,  // Allow all origins temporarily
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'x-user-email', 'x-tenant-id', 'X-User-Email', 'X-Tenant-ID', 'x-vercel-protection-bypass'],
   credentials: true
