@@ -9,3 +9,6 @@ cmds = ['npx prisma generate']
 
 [start]
 cmd = 'node simple-server.js'
+
+[variables]
+NODE_ENV = 'production'
