@@ -20,6 +20,7 @@ app.use(cors({
   origin: [
     'https://xeno-shopify-task.vercel.app',
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://localhost:3005',
     'https://xeno-shopify-task-backendupd.vercel.app',
     /\.vercel\.app$/
