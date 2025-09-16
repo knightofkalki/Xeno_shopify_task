@@ -20,6 +20,8 @@ app.use(cors({
   origin: [
     'https://xeno-shopify-task.vercel.app',
     'https://xeno-dashboard-1rc6acx4l-boardlys-projects.vercel.app',
+    'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app',
+    'https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3005',
