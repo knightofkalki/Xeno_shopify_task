@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://xenoshopifytask-production.up.railway.app';
 
 export default function InsightsDashboard({ tenantId }) {
   const [dashboardData, setDashboardData] = useState({

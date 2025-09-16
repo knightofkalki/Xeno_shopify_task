@@ -4,7 +4,7 @@
     { "src": "next.config.js", "use": "@vercel/next" }
   ],
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app"
+    "NEXT_PUBLIC_API_URL": "https://xenoshopifytask-production.up.railway.app"
   },
   "functions": {
     "app/**": {

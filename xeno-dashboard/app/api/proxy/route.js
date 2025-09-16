@@ -5,7 +5,7 @@ export async function POST(request) {
     const { endpoint, method = 'POST', ...data } = body;
     
     // Backend URL - using the correct one
-    const BACKEND_URL = 'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app';
+    const BACKEND_URL = 'https://xenoshopifytask-production.up.railway.app';
     
     const response = await fetch(`${BACKEND_URL}${endpoint}`, {
       method: method,
@@ -41,7 +41,7 @@ export async function GET(request) {
     const endpoint = url.searchParams.get('endpoint');
     const token = url.searchParams.get('token');
     
-    const BACKEND_URL = 'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app';
+    const BACKEND_URL = 'https://xenoshopifytask-production.up.railway.app';
     
     const headers = {
       'Content-Type': 'application/json',

@@ -56,7 +56,7 @@ export default function SettingsPage() {
         accessToken: userInfo.accessToken ? 'Present' : 'Missing'
       }); // DEBUG
       
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app';
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://xenoshopifytask-production.up.railway.app';
       const response = await fetch(`${apiBase}/api/user/profile`, {
         method: 'PUT',
         headers: { 

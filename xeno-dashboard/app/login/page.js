@@ -18,20 +18,15 @@ export default function Login() {
     setError('');
 
     try {
-      // CORS PROXY - Using allorigins for POST requests
-      const response = await fetch('https://api.allorigins.win/post', {
+      // Direct API call to Railway backend (no CORS issues)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://xenoshopifytask-production.up.railway.app'}/api/auth/login-tenant`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          url: 'https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app/api/auth/login-tenant',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-vercel-protection-bypass': 'xe_3a4f9b2c8d1e7f6g9h0i2j3k4l5m6n7o8p9q1r2s'
-          },
-          body: JSON.stringify({ email: email.trim(), password: password.trim() })
+        body: JSON.stringify({ 
+          email: email.trim(), 
+          password: password.trim() 
         })
       });
 
