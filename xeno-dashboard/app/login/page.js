@@ -18,7 +18,8 @@ export default function Login() {
     setError('');
 
     try {
-      // Direct API call to Railway backend (hardcoded URL to bypass env issues)
+      // Direct API call to Railway backend (hardcoded URL to bypass env issues) - v2.0
+      console.log('🚀 Making API call to Railway backend:', 'https://xenoshopifytask-production.up.railway.app/api/auth/login-tenant');
       const response = await fetch('https://xenoshopifytask-production.up.railway.app/api/auth/login-tenant', {
         method: 'POST',
         headers: {
