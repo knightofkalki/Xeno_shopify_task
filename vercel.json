@@ -2,18 +2,23 @@
   "version": 2,
   "builds": [
     {
-      "src": "simple-server.js",
+      "src": "api/index.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "simple-server.js"
+      "dest": "/api/index.js"
     }
   ],
   "buildCommand": "npx prisma generate",
   "env": {
     "PRISMA_QUERY_ENGINE_LIBRARY": "@prisma/query-engine-rhel-openssl-1.0.x"
+  },
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30
+    }
   }
 }

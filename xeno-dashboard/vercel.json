@@ -4,11 +4,34 @@
     { "src": "next.config.js", "use": "@vercel/next" }
   ],
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://xeno-shopify-task-pra7-git-main-boardlys-projects.vercel.app"
+    "NEXT_PUBLIC_API_URL": "https://xeno-shopify-service-5hy737wj7-boardlys-projects.vercel.app"
   },
   "functions": {
     "app/**": {
       "maxDuration": 30
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ]
 }

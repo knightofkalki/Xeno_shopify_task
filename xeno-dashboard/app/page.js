@@ -51,6 +51,7 @@ export default function Dashboard() {
 
   const fetchBusinessMetrics = async () => {
     try {
+      const headers = getAuthHeaders();
       const urls = [
         `${BACKEND_URL}/api/analytics/sales-performance?tenantId=${tenantId}`,
         `${BACKEND_URL}/api/analytics/customer-behavior?tenantId=${tenantId}`, 
@@ -58,9 +59,9 @@ export default function Dashboard() {
       ];
       
       const [salesResult, customerResult, productResult] = await Promise.allSettled([
-        fetch(urls[0]).then(res => res.ok ? res.json() : { success: false }),
-        fetch(urls[1]).then(res => res.ok ? res.json() : { success: false }),
-        fetch(urls[2]).then(res => res.ok ? res.json() : { success: false })
+        fetch(urls[0], { headers }).then(res => res.ok ? res.json() : { success: false }),
+        fetch(urls[1], { headers }).then(res => res.ok ? res.json() : { success: false }),
+        fetch(urls[2], { headers }).then(res => res.ok ? res.json() : { success: false })
       ]);
       
       const salesData = salesResult.status === 'fulfilled' && salesResult.value?.success ? salesResult.value.data : [];
@@ -73,6 +74,7 @@ export default function Dashboard() {
         products: Array.isArray(productData) ? productData : []
       });
     } catch (error) {
+      console.error('Error fetching business metrics:', error);
       setBusinessMetrics({ sales: [], customers: [], products: [] });
     }
   };
@@ -80,8 +82,9 @@ export default function Dashboard() {
   const fetchCustomerList = async (page = 1, search = '') => {
     setCustomerListModal(prev => ({ ...prev, loading: true }));
     try {
+      const headers = getAuthHeaders();
       const url = `${BACKEND_URL}/api/customers/list?tenantId=${tenantId}&page=${page}&limit=20&search=${encodeURIComponent(search)}`;
-      const response = await fetch(url);
+      const response = await fetch(url, { headers });
       const data = await response.json();
       
       if (data.success) {
@@ -96,6 +99,7 @@ export default function Dashboard() {
         setCustomerListModal(prev => ({ ...prev, loading: false }));
       }
     } catch (error) {
+      console.error('Error fetching customer list:', error);
       setCustomerListModal(prev => ({ ...prev, loading: false }));
     }
   };
